@@ -44,7 +44,7 @@ def convert_data(data_list_path, output_prefix):
             path, label = record.replace('\n', '').split('\t')
             y1, sr1 = librosa.load(path, duration=2.97)
             ps = librosa.feature.melspectrogram(y=y1, sr=sr1).reshape(-1).tolist()
-            data = struct.pack('%sd' % (128 * 128), *ps)
+            data = struct.pack('%sd' % len(ps), *ps)
             # 写入对应的数据
             key = str(uuid.uuid1())
             writer.add_data(key, data)
@@ -104,7 +104,7 @@ def get_urbansound8k_list(path, urbansound8k_cvs_path):
 
 
 if __name__ == '__main__':
-    # get_urbansound8k_list('dataset', 'dataset/UrbanSound8K/metadata/UrbanSound8K.csv')
+    get_urbansound8k_list('dataset', 'dataset/UrbanSound8K/metadata/UrbanSound8K.csv')
     # get_data_list('dataset/audio', 'dataset')
     convert_data('dataset/train_list.txt', 'dataset/train')
     convert_data('dataset/test_list.txt', 'dataset/test')
