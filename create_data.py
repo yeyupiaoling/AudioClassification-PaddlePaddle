@@ -44,6 +44,7 @@ def convert_data(data_list_path, output_prefix):
             path, label = record.replace('\n', '').split('\t')
             y1, sr1 = librosa.load(path, duration=2.97)
             ps = librosa.feature.melspectrogram(y=y1, sr=sr1).reshape(-1).tolist()
+            if len(ps) != 128 * 128: continue
             data = struct.pack('%sd' % len(ps), *ps)
             # 写入对应的数据
             key = str(uuid.uuid1())

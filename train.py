@@ -1,12 +1,10 @@
-import os
-
 import reader
 import paddle.fluid as fluid
 
 # 保存预测模型路径
 save_path = 'models/'
 # 类别总数
-CLASS_DIM = 5
+CLASS_DIM = 10
 
 # 定义输入层
 image = fluid.data(name='image', shape=[None, 1, 128, 128], dtype='float32')

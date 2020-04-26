@@ -36,6 +36,6 @@ def infer(audio_path):
 
 if __name__ == '__main__':
     # 要预测的音频文件
-    path = 'dataset/audio/peibin/ba6d1294-e330-11e9-a517-c8ff285a4318.wav'
+    path = 'dataset/UrbanSound8K/audio/fold8/193699-2-0-46.wav'
     label = infer(path)
     print('音频：%s 的预测结果标签为：%d' % (path, label))
