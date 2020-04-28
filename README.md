@@ -69,21 +69,50 @@ ps = librosa.feature.melspectrogram(y=y1, sr=sr1)
 
 我们训练的数据就是通过librosa把音频生成梅尔频谱的数据，但是生成梅尔频谱的数据时间比较长，如果过是边训练边生成，这样会严重影响训练的速度，所以最后是在训练前，我们把所有的训练数据都转换成梅尔频谱并存储在二进制文件中，这样不仅省去了生成梅尔频谱的时间，还能缩短读取文件的时间。当文件的数量非常多时，文件的读取就会变得非常慢，如果我们把这些文件写入到一个二进制文件中，这样读取速度将会大大提高。下面我们就来把音频数据生成我们所需的训练数据
 
-首先需要生成数据列表，用于下一步的读取需要，`audio_path`为音频文件路径，用户需要提前把音频数据集存放在 `dataset/audio`目录下，每个文件夹存放一个类别的音频数据，每条音频数据长度在5秒左右，如 `dataset/audio/鸟叫声/······`。`audio`是数据列表存放的位置，生成的数据类别的格式为 `音频路径\t音频对应的类别标签`，音频路径和标签用制表符 `\t`分开。读者也可以根据自己存放数据的方式修改以下函数。
+在创建训练数据之前，我们最好清理一下数据，因为有一些音频包含了静音，这些静音会影响模型的训练，我们需要把这些静音片段都裁剪掉，保证数据集的干净。
+```python
+import os
+import struct
+import uuid
+import librosa
+import pandas as pd
+from tqdm import tqdm
+
+def crop_silence(audios_path):
+    print("正在裁剪静音片段...")
+    for root, dirs, files in os.walk(audios_path, topdown=False):
+        for name in files:
+            audio_path = os.path.join(root, name)
+            wav, sr = librosa.load(audio_path)
+
+            intervals = librosa.effects.split(wav, top_db=20)
+            wav_output = []
+            for sliced in intervals:
+                wav_output.extend(wav[sliced[0]:sliced[1]])
+            wav_output = np.array(wav_output)
+            librosa.output.write_wav(audio_path, wav_output, sr)
+
+    print("裁剪完成！")
+
+if __name__ == '__main__':
+    crop_silence('dataset/audio')
+```
+
+然后需要生成数据列表，用于下一步的读取需要，`audio_path`为音频文件路径，用户需要提前把音频数据集存放在 `dataset/audio`目录下，每个文件夹存放一个类别的音频数据，每条音频数据长度在5秒左右，如 `dataset/audio/鸟叫声/······`。`audio`是数据列表存放的位置，生成的数据类别的格式为 `音频路径\t音频对应的类别标签`，音频路径和标签用制表符 `\t`分开。读者也可以根据自己存放数据的方式修改以下函数。
 
 ```python
 # 生成数据列表
 def get_data_list(audio_path, list_path):
     sound_sum = 0
-    persons = os.listdir(audio_path)
+    audios = os.listdir(audio_path)
 
     f_train = open(os.path.join(list_path, 'train_list.txt'), 'w')
     f_test = open(os.path.join(list_path, 'test_list.txt'), 'w')
 
-    for i in range(len(persons)):
-        sounds = os.listdir(os.path.join(audio_path, persons[i]))
+    for i in range(len(audios)):
+        sounds = os.listdir(os.path.join(audio_path, audios[i]))
         for sound in sounds:
-            sound_path = os.path.join(audio_path, persons[i], sound)
+            sound_path = os.path.join(audio_path, audios[i], sound)
             t = librosa.get_duration(filename=sound_path)
             # 过滤小于3秒的音频
             if t >= 3:
@@ -92,7 +121,7 @@ def get_data_list(audio_path, list_path):
                 else:
                     f_train.write('%s\t%d\n' % (sound_path, i))
                 sound_sum += 1
-        print("Person：%d/%d" % (i + 1, len(persons)))
+        print("Audio：%d/%d" % (i + 1, len(audios)))
 
     f_test.close()
     f_train.close()
@@ -104,14 +133,6 @@ if __name__ == '__main__':
 生成数据列表之后，下一步开始把这些音频生成梅尔频谱的二进制文件。生成的二进制文件有三个，`.data`是存放梅尔频谱数据的，全部的数据都存放在这个文件中，`.header`存放每条数据的key，`.label`存放数据的标签值，通过这个key之后可以获取 `.data`中的数据和 `.label`的标签，以及 `.data`中每条数据的偏移量。
 
 ```python
-import os
-import struct
-import uuid
-import librosa
-import pandas as pd
-from tqdm import tqdm
-
-
 class DataSetWriter(object):
     def __init__(self, prefix):
         # 创建对应的数据文件
@@ -542,7 +563,7 @@ def crop_wav(path, crop_len):
 
 
 if __name__ == '__main__':
-    crop_len = 3
+    crop_len = 6
     crop_wav('save_audio', crop_len)
 ```
 
