@@ -21,7 +21,7 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
-RECORD_SECONDS = 3
+RECORD_SECONDS = 6
 WAVE_OUTPUT_FILENAME = "infer_audio.wav"
 
 # 打开录音
@@ -35,8 +35,13 @@ stream = p.open(format=FORMAT,
 
 # 读取音频数据
 def load_data(data_path):
-    y1, sr1 = librosa.load(data_path, duration=2.97)
-    ps = librosa.feature.melspectrogram(y=y1, sr=sr1).astype(np.float32)
+    wav, sr = librosa.load(data_path)
+    intervals = librosa.effects.split(wav, top_db=20)
+    wav_output = []
+    for sliced in intervals:
+        wav_output.extend(wav[sliced[0]:sliced[1]])
+    wav_output = np.array(wav_output)[:65489]
+    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr).astype(np.float32)
     ps = ps[np.newaxis, np.newaxis, ...]
     return ps
 
@@ -74,12 +79,15 @@ def infer(audio_data):
 if __name__ == '__main__':
     try:
         while True:
-            # 加载数据
-            data = load_data(record_audio())
+            try:
+                # 加载数据
+                data = load_data(record_audio())
 
-            # 获取预测结果
-            label = infer(data)
-            print('预测的标签为：%d' % label)
+                # 获取预测结果
+                label = infer(data)
+                print('预测的标签为：%d' % label)
+            except:
+                pass
     except Exception as e:
         print(e)
         stream.stop_stream()
