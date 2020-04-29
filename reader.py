@@ -89,9 +89,3 @@ def test_reader(data_path, batch_size):
                 batch_data, batch_label = [], []
 
     return reader
-
-
-if __name__ == '__main__':
-    train_reader1 = train_reader('dataset/train', batch_size=32)
-    for data in train_reader1():
-        print(data[0])

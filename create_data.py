@@ -43,8 +43,8 @@ def convert_data(data_list_path, output_prefix):
     for record in tqdm(data_list):
         try:
             path, label = record.replace('\n', '').split('\t')
-            y1, sr1 = librosa.load(path, duration=2.97)
-            ps = librosa.feature.melspectrogram(y=y1, sr=sr1).reshape(-1).tolist()
+            y1, sr1 = librosa.load(path, sr=16000, duration=2.04)
+            ps = librosa.feature.melspectrogram(y=y1, sr=sr1, hop_length=256).reshape(-1).tolist()
             if len(ps) != 128 * 128: continue
             data = struct.pack('%sd' % len(ps), *ps)
             # 写入对应的数据

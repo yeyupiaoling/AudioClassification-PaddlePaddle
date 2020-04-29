@@ -20,8 +20,8 @@ save_path = 'models/'
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 44100
-RECORD_SECONDS = 6
+RATE = 16000
+RECORD_SECONDS = 4
 WAVE_OUTPUT_FILENAME = "infer_audio.wav"
 
 # 打开录音
@@ -35,13 +35,13 @@ stream = p.open(format=FORMAT,
 
 # 读取音频数据
 def load_data(data_path):
-    wav, sr = librosa.load(data_path)
+    wav, sr = librosa.load(data_path, sr=16000)
     intervals = librosa.effects.split(wav, top_db=20)
     wav_output = []
     for sliced in intervals:
         wav_output.extend(wav[sliced[0]:sliced[1]])
-    wav_output = np.array(wav_output)[:65489]
-    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr).astype(np.float32)
+    wav_output = np.array(wav_output)[:32640]
+    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).astype(np.float32)
     ps = ps[np.newaxis, np.newaxis, ...]
     return ps
 
