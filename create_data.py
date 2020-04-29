@@ -68,8 +68,8 @@ def get_data_list(audio_path, list_path):
         for sound in sounds:
             sound_path = os.path.join(audio_path, audios[i], sound)
             t = librosa.get_duration(filename=sound_path)
-            # 过滤小于3秒的音频
-            if t >= 3:
+            # 过滤小于2.1秒的音频
+            if t >= 2.1:
                 if sound_sum % 100 == 0:
                     f_test.write('%s\t%d\n' % (sound_path, i))
                 else:
