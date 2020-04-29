@@ -329,7 +329,7 @@ save_path = 'models/'
 CLASS_DIM = 10
 
 # 定义输入层
-image = fluid.data(name='image', shape=[None, 1, 128, 128], dtype='float32')
+audio = fluid.data(name='audio', shape=[None, 1, 128, 128], dtype='float32')
 label = fluid.data(name='label', shape=[None, 1], dtype='int64')
 
 
@@ -358,7 +358,7 @@ def cnn(input, class_dim):
 
 
 # 获取网络模型
-model = cnn(image, CLASS_DIM)
+model = cnn(audio, CLASS_DIM)
 
 # 获取损失函数和准确率函数
 cost = fluid.layers.cross_entropy(input=model, label=label)
@@ -390,7 +390,7 @@ for pass_id in range(100):
     # 进行训练
     for batch_id, data in enumerate(train_reader()):
         train_cost, train_acc = exe.run(program=fluid.default_main_program(),
-                                        feed={image.name: data[0], label.name: data[1]},
+                                        feed={audio.name: data[0], label.name: data[1]},
                                         fetch_list=[avg_cost, acc])
 
         # 每100个batch打印一次信息
@@ -403,7 +403,7 @@ for pass_id in range(100):
     test_costs = []
     for batch_id, data in enumerate(test_reader()):
         test_cost, test_acc = exe.run(program=test_program,
-                                      feed={image.name: data[0], label.name: data[1]},
+                                      feed={audio.name: data[0], label.name: data[1]},
                                       fetch_list=[avg_cost, acc])
         test_accs.append(test_acc[0])
         test_costs.append(test_cost[0])
@@ -413,7 +413,7 @@ for pass_id in range(100):
     print('Test:%d, Cost:%0.5f, Accuracy:%0.5f' % (pass_id, test_cost, test_acc))
 
     # 保存预测模型
-    fluid.io.save_inference_model(dirname=save_path, feeded_var_names=[image.name], target_vars=[model], executor=exe)
+    fluid.io.save_inference_model(dirname=save_path, feeded_var_names=[audio.name], target_vars=[model], executor=exe)
 
 ```
 
