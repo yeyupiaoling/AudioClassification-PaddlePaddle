@@ -124,8 +124,8 @@ def get_urbansound8k_list(path, urbansound8k_cvs_path):
 
 
 if __name__ == '__main__':
-    crop_silence('dataset/audio')
-    # get_urbansound8k_list('dataset', 'dataset/UrbanSound8K/metadata/UrbanSound8K.csv')
-    get_data_list('dataset/audio', 'dataset')
+    # crop_silence('dataset/audio')
+    get_urbansound8k_list('dataset', 'dataset/UrbanSound8K/metadata/UrbanSound8K.csv')
+    # get_data_list('dataset/audio', 'dataset')
     convert_data('dataset/train_list.txt', 'dataset/train')
     convert_data('dataset/test_list.txt', 'dataset/test')

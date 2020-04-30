@@ -1,5 +1,6 @@
 import reader
 import paddle.fluid as fluid
+import resnet
 
 # 保存预测模型路径
 save_path = 'models/'
@@ -10,33 +11,8 @@ CLASS_DIM = 10
 audio = fluid.data(name='audio', shape=[None, 1, 128, 128], dtype='float32')
 label = fluid.data(name='label', shape=[None, 1], dtype='int64')
 
-
-# 卷积神经网络
-def cnn(input, class_dim):
-    conv1 = fluid.layers.conv2d(input=input,
-                                num_filters=20,
-                                filter_size=5,
-                                act='relu')
-
-    conv2 = fluid.layers.conv2d(input=conv1,
-                                num_filters=50,
-                                filter_size=5,
-                                act='relu')
-
-    pool1 = fluid.layers.pool2d(input=conv2,
-                                pool_size=2,
-                                pool_stride=2,
-                                pool_type='max')
-
-    bn = fluid.layers.batch_norm(pool1)
-    flatten = fluid.layers.flatten(bn)
-    f1 = fluid.layers.fc(input=flatten, size=128, act='relu')
-    f2 = fluid.layers.fc(input=f1, size=class_dim, act='softmax')
-    return f2
-
-
 # 获取网络模型
-model = cnn(audio, CLASS_DIM)
+model = resnet.resnet50(audio, CLASS_DIM)
 
 # 获取损失函数和准确率函数
 cost = fluid.layers.cross_entropy(input=model, label=label)
@@ -47,7 +23,9 @@ acc = fluid.layers.accuracy(input=model, label=label)
 test_program = fluid.default_main_program().clone(for_test=True)
 
 # 定义优化方法
-optimizer = fluid.optimizer.AdamOptimizer(learning_rate=1e-3)
+optimizer = fluid.optimizer.AdamOptimizer(learning_rate=1e-3,
+                                          regularization=fluid.regularizer.L2Decay(
+                                              regularization_coeff=0.001))
 opts = optimizer.minimize(avg_cost)
 
 # 获取自定义数据
@@ -69,7 +47,7 @@ for pass_id in range(100):
                                         fetch_list=[avg_cost, acc])
 
         # 每100个batch打印一次信息
-        if batch_id % 100 == 0:
+        if batch_id % 50 == 0:
             print('Pass:%d, Batch:%d, Cost:%0.5f, Accuracy:%0.5f' %
                   (pass_id, batch_id, train_cost[0], train_acc[0]))
 
