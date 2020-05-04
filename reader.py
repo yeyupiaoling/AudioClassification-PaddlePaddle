@@ -38,8 +38,8 @@ class ReadData(object):
 
 def mapper(sample):
     data, label = sample
-    data = list(struct.unpack('%sd' % (128 * 128), data))
-    data = np.array(data).reshape((1, 128, 128)).astype(np.float32)
+    data = list(struct.unpack('%sd' % (128 * 188), data))
+    data = np.array(data).reshape((1, 128, 188)).astype(np.float32)
     assert (data is not None), 'data is None'
     return data, label
 

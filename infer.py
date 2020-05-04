@@ -22,8 +22,12 @@ def load_data(data_path):
     wav_output = []
     for sliced in intervals:
         wav_output.extend(wav[sliced[0]:sliced[1]])
-    assert len(wav_output) >= 32640, "有效音频小于2.04s"
-    wav_output = np.array(wav_output)[:32640]
+    wav_len = 16000 * 3
+    if len(wav_output) > wav_len:
+        wav_output = np.array(wav_output)[:wav_len]
+    else:
+        wav_output.extend(np.zeros(shape=[wav_len - len(wav_output)], dtype=np.float32))
+        wav_output = np.array(wav_output)
     ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).astype(np.float32)
     ps = ps[np.newaxis, np.newaxis, ...]
     return ps

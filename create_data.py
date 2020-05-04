@@ -1,4 +1,5 @@
 import os
+import random
 import struct
 import uuid
 import librosa
@@ -43,14 +44,31 @@ def convert_data(data_list_path, output_prefix):
     for record in tqdm(data_list):
         try:
             path, label = record.replace('\n', '').split('\t')
-            y1, sr1 = librosa.load(path, sr=16000, duration=2.04)
-            ps = librosa.feature.melspectrogram(y=y1, sr=sr1, hop_length=256).reshape(-1).tolist()
-            if len(ps) != 128 * 128: continue
-            data = struct.pack('%sd' % len(ps), *ps)
-            # 写入对应的数据
-            key = str(uuid.uuid1())
-            writer.add_data(key, data)
-            writer.add_label('\t'.join([key, label.replace('\n', '')]))
+            wav, sr = librosa.load(path, sr=16000)
+            intervals = librosa.effects.split(wav, top_db=20)
+            wav_output = []
+            wav_len = 16000 * 3
+            for sliced in intervals:
+                wav_output.extend(wav[sliced[0]:sliced[1]])
+            for i in range(5):
+                # 裁剪过长的音频，过短的补0
+                if len(wav_output) > wav_len:
+                    l = len(wav_output) - wav_len
+                    r = random.randint(0, l)
+                    wav_output = wav_output[r:wav_len + r]
+                else:
+                    wav_output.extend(np.zeros(shape=[wav_len - len(wav_output)], dtype=np.float32))
+                wav_output = np.array(wav_output)
+                # 转成梅尔频谱
+                ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).reshape(-1).tolist()
+                if len(ps) != 128 * 188: continue
+                data = struct.pack('%sd' % len(ps), *ps)
+                # 写入对应的数据
+                key = str(uuid.uuid1())
+                writer.add_data(key, data)
+                writer.add_label('\t'.join([key, label.replace('\n', '')]))
+                if len(wav_output) <= wav_len:
+                    break
         except Exception as e:
             print(e)
 
@@ -81,24 +99,6 @@ def get_data_list(audio_path, list_path):
     f_train.close()
 
 
-# 裁剪静音片段
-def crop_silence(audios_path):
-    print("正在裁剪静音片段...")
-    for root, dirs, files in os.walk(audios_path, topdown=False):
-        for name in files:
-            audio_path = os.path.join(root, name)
-            wav, sr = librosa.load(audio_path)
-
-            intervals = librosa.effects.split(wav, top_db=20)
-            wav_output = []
-            for sliced in intervals:
-                wav_output.extend(wav[sliced[0]:sliced[1]])
-            wav_output = np.array(wav_output)
-            librosa.output.write_wav(audio_path, wav_output, sr)
-
-    print("裁剪完成！")
-
-
 # 创建UrbanSound8K数据列表
 def get_urbansound8k_list(path, urbansound8k_cvs_path):
     data_list = []
@@ -124,7 +124,6 @@ def get_urbansound8k_list(path, urbansound8k_cvs_path):
 
 
 if __name__ == '__main__':
-    # crop_silence('dataset/audio')
     get_urbansound8k_list('dataset', 'dataset/UrbanSound8K/metadata/UrbanSound8K.csv')
     # get_data_list('dataset/audio', 'dataset')
     convert_data('dataset/train_list.txt', 'dataset/train')
