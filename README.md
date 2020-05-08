@@ -61,7 +61,7 @@ pip install pydub
 把音频转换成训练数据最重要的是使用了librosa，使用librosa可以很方便得到音频的梅尔频谱（Mel Spectrogram），使用的API为 `librosa.feature.melspectrogram()`，输出的是numpy值，可以直接用tensorflow训练和预测。关于梅尔频谱具体信息读者可以自行了解，跟梅尔频谱同样很重要的梅尔倒谱（MFCCs）更多用于语音识别中，对应的API为 `librosa.feature.mfcc()`。同样以下的代码，就可以获取到音频的梅尔频谱，其中 `duration`参数指定的是截取音频的长度。
 
 ```python
-y1, sr1 = librosa.load(data_path, duration=2.97)
+y1, sr1 = librosa.load(data_path)
 ps = librosa.feature.melspectrogram(y=y1, sr=sr1)
 ```
 
@@ -671,5 +671,12 @@ if __name__ == '__main__':
         stream.close()
         p.terminate()
 ```
+
+# 模型
+
+| 模型名称 | 所用数据集 | 下载地址 |
+| :---: | :---: | :---: |
+| 网络预测模型 | UrbanSound8K | [点击下载](https://resource.doiduoyi.com/#y2c48og) |
+
 
 **Github地址：**[https://github.com/yeyupiaoling/AudioClassification_PaddlePaddle](https://github.com/yeyupiaoling/AudioClassification_PaddlePaddle)
