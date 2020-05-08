@@ -22,7 +22,7 @@ def load_data(data_path):
     wav_output = []
     for sliced in intervals:
         wav_output.extend(wav[sliced[0]:sliced[1]])
-    wav_len = 16000 * 3
+    wav_len = int(16000 * 2.04)
     if len(wav_output) > wav_len:
         wav_output = np.array(wav_output)[:wav_len]
     else:
@@ -46,6 +46,6 @@ def infer(audio_path):
 
 if __name__ == '__main__':
     # 要预测的音频文件
-    path = 'dataset/UrbanSound8K/audio/fold8/193699-2-0-46.wav'
+    path = 'dataset/UrbanSound8K/audio/fold5/156634-5-2-5.wav'
     label = infer(path)
     print('音频：%s 的预测结果标签为：%d' % (path, label))

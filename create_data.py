@@ -47,7 +47,7 @@ def convert_data(data_list_path, output_prefix):
             wav, sr = librosa.load(path, sr=16000)
             intervals = librosa.effects.split(wav, top_db=20)
             wav_output = []
-            wav_len = 16000 * 3
+            wav_len = int(16000 * 2.04)
             for sliced in intervals:
                 wav_output.extend(wav[sliced[0]:sliced[1]])
             for i in range(5):
@@ -61,7 +61,7 @@ def convert_data(data_list_path, output_prefix):
                 wav_output = np.array(wav_output)
                 # 转成梅尔频谱
                 ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).reshape(-1).tolist()
-                if len(ps) != 128 * 188: continue
+                if len(ps) != 128 * 128: continue
                 data = struct.pack('%sd' % len(ps), *ps)
                 # 写入对应的数据
                 key = str(uuid.uuid1())

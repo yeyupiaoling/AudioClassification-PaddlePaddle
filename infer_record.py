@@ -40,7 +40,7 @@ def load_data(data_path):
     wav_output = []
     for sliced in intervals:
         wav_output.extend(wav[sliced[0]:sliced[1]])
-    wav_len = 16000 * 3
+    wav_len = int(16000 * 2.04)
     if len(wav_output) > wav_len:
         wav_output = np.array(wav_output)[:wav_len]
     else:
