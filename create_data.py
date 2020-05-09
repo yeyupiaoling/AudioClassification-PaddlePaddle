@@ -85,7 +85,6 @@ def get_data_list(audio_path, list_path):
         sounds = os.listdir(os.path.join(audio_path, audios[i]))
         for sound in sounds:
             sound_path = os.path.join(audio_path, audios[i], sound)
-            t = librosa.get_duration(filename=sound_path)
             if sound_sum % 100 == 0:
                 f_test.write('%s\t%d\n' % (sound_path, i))
             else:

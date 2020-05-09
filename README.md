@@ -61,42 +61,13 @@ pip install pydub
 把音频转换成训练数据最重要的是使用了librosa，使用librosa可以很方便得到音频的梅尔频谱（Mel Spectrogram），使用的API为 `librosa.feature.melspectrogram()`，输出的是numpy值，可以直接用tensorflow训练和预测。关于梅尔频谱具体信息读者可以自行了解，跟梅尔频谱同样很重要的梅尔倒谱（MFCCs）更多用于语音识别中，对应的API为 `librosa.feature.mfcc()`。同样以下的代码，就可以获取到音频的梅尔频谱，其中 `duration`参数指定的是截取音频的长度。
 
 ```python
-y1, sr1 = librosa.load(data_path)
-ps = librosa.feature.melspectrogram(y=y1, sr=sr1)
+wav, sr = librosa.load(path, sr=16000)
+ps = librosa.feature.melspectrogram(y=wav, sr=sr, hop_length=256)
 ```
 
 ## 创建训练数据
 
 我们训练的数据就是通过librosa把音频生成梅尔频谱的数据，但是生成梅尔频谱的数据时间比较长，如果过是边训练边生成，这样会严重影响训练的速度，所以最后是在训练前，我们把所有的训练数据都转换成梅尔频谱并存储在二进制文件中，这样不仅省去了生成梅尔频谱的时间，还能缩短读取文件的时间。当文件的数量非常多时，文件的读取就会变得非常慢，如果我们把这些文件写入到一个二进制文件中，这样读取速度将会大大提高。下面我们就来把音频数据生成我们所需的训练数据
-
-在创建训练数据之前，我们最好清理一下数据，因为有一些音频包含了静音，这些静音会影响模型的训练，我们需要把这些静音片段都裁剪掉，保证数据集的干净。
-```python
-import os
-import struct
-import uuid
-import librosa
-import pandas as pd
-from tqdm import tqdm
-
-def crop_silence(audios_path):
-    print("正在裁剪静音片段...")
-    for root, dirs, files in os.walk(audios_path, topdown=False):
-        for name in files:
-            audio_path = os.path.join(root, name)
-            wav, sr = librosa.load(audio_path)
-
-            intervals = librosa.effects.split(wav, top_db=20)
-            wav_output = []
-            for sliced in intervals:
-                wav_output.extend(wav[sliced[0]:sliced[1]])
-            wav_output = np.array(wav_output)
-            librosa.output.write_wav(audio_path, wav_output, sr)
-
-    print("裁剪完成！")
-
-if __name__ == '__main__':
-    crop_silence('dataset/audio')
-```
 
 然后需要生成数据列表，用于下一步的读取需要，`audio_path`为音频文件路径，用户需要提前把音频数据集存放在 `dataset/audio`目录下，每个文件夹存放一个类别的音频数据，每条音频数据长度在5秒左右，如 `dataset/audio/鸟叫声/······`。`audio`是数据列表存放的位置，生成的数据类别的格式为 `音频路径\t音频对应的类别标签`，音频路径和标签用制表符 `\t`分开。读者也可以根据自己存放数据的方式修改以下函数。
 
@@ -113,14 +84,11 @@ def get_data_list(audio_path, list_path):
         sounds = os.listdir(os.path.join(audio_path, audios[i]))
         for sound in sounds:
             sound_path = os.path.join(audio_path, audios[i], sound)
-            t = librosa.get_duration(filename=sound_path)
-            # 过滤小于3秒的音频
-            if t >= 3:
-                if sound_sum % 100 == 0:
-                    f_test.write('%s\t%d\n' % (sound_path, i))
-                else:
-                    f_train.write('%s\t%d\n' % (sound_path, i))
-                sound_sum += 1
+            if sound_sum % 100 == 0:
+                f_test.write('%s\t%d\n' % (sound_path, i))
+            else:
+                f_train.write('%s\t%d\n' % (sound_path, i))
+            sound_sum += 1
         print("Audio：%d/%d" % (i + 1, len(audios)))
 
     f_test.close()
@@ -130,7 +98,7 @@ if __name__ == '__main__':
     get_data_list('dataset/audio', 'dataset')
 ```
 
-生成数据列表之后，下一步开始把这些音频生成梅尔频谱的二进制文件。生成的二进制文件有三个，`.data`是存放梅尔频谱数据的，全部的数据都存放在这个文件中，`.header`存放每条数据的key，`.label`存放数据的标签值，通过这个key之后可以获取 `.data`中的数据和 `.label`的标签，以及 `.data`中每条数据的偏移量。
+生成数据列表之后，下一步开始把这些音频生成梅尔频谱的二进制文件。生成的二进制文件有三个，`.data`是存放梅尔频谱数据的，全部的数据都存放在这个文件中，`.header`存放每条数据的key，`.label`存放数据的标签值，通过这个key之后可以获取 `.data`中的数据和 `.label`的标签，以及 `.data`中每条数据的偏移量。在加载音频数据时，会裁剪掉一些静音片段，因为有一些音频包含了静音，这些静音会影响模型的训练，我们需要把这些静音片段都裁剪掉，保证数据集的干净。
 
 ```python
 class DataSetWriter(object):
@@ -169,14 +137,31 @@ def convert_data(data_list_path, output_prefix):
     for record in tqdm(data_list):
         try:
             path, label = record.replace('\n', '').split('\t')
-            y1, sr1 = librosa.load(path, duration=2.97)
-            ps = librosa.feature.melspectrogram(y=y1, sr=sr1).reshape(-1).tolist()
-            if len(ps) != 128 * 128: continue
-            data = struct.pack('%sd' % len(ps), *ps)
-            # 写入对应的数据
-            key = str(uuid.uuid1())
-            writer.add_data(key, data)
-            writer.add_label('\t'.join([key, label.replace('\n', '')]))
+            wav, sr = librosa.load(path, sr=16000)
+            intervals = librosa.effects.split(wav, top_db=20)
+            wav_output = []
+            wav_len = int(16000 * 2.04)
+            for sliced in intervals:
+                wav_output.extend(wav[sliced[0]:sliced[1]])
+            for i in range(5):
+                # 裁剪过长的音频，过短的补0
+                if len(wav_output) > wav_len:
+                    l = len(wav_output) - wav_len
+                    r = random.randint(0, l)
+                    wav_output = wav_output[r:wav_len + r]
+                else:
+                    wav_output.extend(np.zeros(shape=[wav_len - len(wav_output)], dtype=np.float32))
+                wav_output = np.array(wav_output)
+                # 转成梅尔频谱
+                ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).reshape(-1).tolist()
+                if len(ps) != 128 * 128: continue
+                data = struct.pack('%sd' % len(ps), *ps)
+                # 写入对应的数据
+                key = str(uuid.uuid1())
+                writer.add_data(key, data)
+                writer.add_label('\t'.join([key, label.replace('\n', '')]))
+                if len(wav_output) <= wav_len:
+                    break
         except Exception as e:
             print(e)
         
@@ -317,11 +302,82 @@ def test_reader(data_path, batch_size):
 
 ## 训练
 
-接着就可以开始训练模型了，创建 `train.py`。我们搭建简单的卷积神经网络，如果音频种类非常多，可以适当使用更大的卷积神经网络模型。通过把音频数据转换成梅尔频谱，数据的shape也相当于灰度图，所以为 `(1, 128, 128)`。然后定义优化方法和获取训练和测试数据。要注意 `CLASS_DIM`参数的值，这个是类别的数量，要根据你数据集中的分类数量来修改。
+创建`vgg.py`文件，我们使用VGG模型来训练我们的音频分类模型，读者也可以使用其他的模型或者自定义一个更简单的模型。如果音频种类非常多，可以适当使用更大的卷积神经网络模型。
+```python
+import paddle
+import paddle.fluid as fluid
+
+__all__ = ["VGGNet", "VGG11", "VGG13", "VGG16", "VGG19"]
+
+
+class VGGNet():
+    def __init__(self, layers=16):
+        self.layers = layers
+
+    def net(self, input, class_dim=1000):
+        layers = self.layers
+        vgg_spec = {
+            11: ([1, 1, 2, 2, 2]),
+            13: ([2, 2, 2, 2, 2]),
+            16: ([2, 2, 3, 3, 3]),
+            19: ([2, 2, 4, 4, 4])
+        }
+        nums = vgg_spec[layers]
+        conv1 = self.conv_block(input, 64, nums[0])
+        conv2 = self.conv_block(conv1, 128, nums[1])
+        conv3 = self.conv_block(conv2, 256, nums[2])
+        conv4 = self.conv_block(conv3, 512, nums[3])
+        conv5 = self.conv_block(conv4, 512, nums[4])
+
+        fc1 = fluid.layers.fc(input=conv5, size=512, act='relu')
+        fc1 = fluid.layers.dropout(x=fc1, dropout_prob=0.5)
+        fc2 = fluid.layers.fc(input=fc1, size=512, act='relu')
+        fc2 = fluid.layers.dropout(x=fc2, dropout_prob=0.5)
+        out = fluid.layers.fc(input=fc2, size=class_dim, act='softmax')
+
+        return out, fc2
+
+    def conv_block(self, input, num_filter, groups):
+        conv = input
+        for i in range(groups):
+            conv = fluid.layers.conv2d(input=conv,
+                                       num_filters=num_filter,
+                                       filter_size=3,
+                                       stride=1,
+                                       padding=1,
+                                       act='relu',
+                                       param_attr=fluid.param_attr.ParamAttr(),
+                                       bias_attr=False)
+        return fluid.layers.pool2d(input=conv, pool_size=2, pool_type='max', pool_stride=2)
+
+
+def VGG11():
+    model = VGGNet(layers=11)
+    return model
+
+
+def VGG13():
+    model = VGGNet(layers=13)
+    return model
+
+
+def VGG16():
+    model = VGGNet(layers=16)
+    return model
+
+
+def VGG19():
+    model = VGGNet(layers=19)
+    return model
+
+```
+
+接着就可以开始训练模型了，创建 `train.py`。通过把音频数据转换成梅尔频谱，数据的shape也相当于灰度图，所以为 `(1, 128, 128)`。然后定义优化方法和获取训练和测试数据。要注意 `CLASS_DIM`参数的值，这个是类别的数量，要根据你数据集中的分类数量来修改。
 
 ```python
 import reader
 import paddle.fluid as fluid
+from vgg import VGG11
 
 # 保存预测模型路径
 save_path = 'models/'
@@ -332,33 +388,9 @@ CLASS_DIM = 10
 audio = fluid.data(name='audio', shape=[None, 1, 128, 128], dtype='float32')
 label = fluid.data(name='label', shape=[None, 1], dtype='int64')
 
-
-# 卷积神经网络
-def cnn(input, class_dim):
-    conv1 = fluid.layers.conv2d(input=input,
-                                num_filters=20,
-                                filter_size=5,
-                                act='relu')
-
-    conv2 = fluid.layers.conv2d(input=conv1,
-                                num_filters=50,
-                                filter_size=5,
-                                act='relu')
-
-    pool1 = fluid.layers.pool2d(input=conv2,
-                                pool_size=2,
-                                pool_stride=2,
-                                pool_type='max')
-
-    bn = fluid.layers.batch_norm(pool1)
-    flatten = fluid.layers.flatten(bn)
-    f1 = fluid.layers.fc(input=flatten, size=128, act='relu')
-    f2 = fluid.layers.fc(input=f1, size=class_dim, act='softmax')
-    return f2
-
-
 # 获取网络模型
-model = cnn(audio, CLASS_DIM)
+vgg = VGG11()
+model, feature = vgg.net(audio, CLASS_DIM)
 
 # 获取损失函数和准确率函数
 cost = fluid.layers.cross_entropy(input=model, label=label)
@@ -369,7 +401,9 @@ acc = fluid.layers.accuracy(input=model, label=label)
 test_program = fluid.default_main_program().clone(for_test=True)
 
 # 定义优化方法
-optimizer = fluid.optimizer.AdamOptimizer(learning_rate=1e-3)
+optimizer = fluid.optimizer.AdamOptimizer(learning_rate=1e-3,
+                                          regularization=fluid.regularizer.L2Decay(
+                                              regularization_coeff=0.001))
 opts = optimizer.minimize(avg_cost)
 
 # 获取自定义数据
@@ -381,6 +415,7 @@ place = fluid.CUDAPlace(0)
 exe = fluid.Executor(place)
 # 进行参数初始化
 exe.run(fluid.default_startup_program())
+
 ```
 
 最后执行训练，每100个batch打印一次训练日志，训练一轮之后执行测试和保存模型，在测试时，把每个batch的输出都统计，最后求平均值。保存的模型为预测模型，方便之后的预测使用。
@@ -441,13 +476,18 @@ save_path = 'models/'
 
 # 读取音频数据
 def load_data(data_path):
-    wav, sr = librosa.load(data_path)
+    wav, sr = librosa.load(data_path, sr=16000)
     intervals = librosa.effects.split(wav, top_db=20)
     wav_output = []
     for sliced in intervals:
         wav_output.extend(wav[sliced[0]:sliced[1]])
-    wav_output = np.array(wav_output)[:65489]
-    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr).astype(np.float32)
+    wav_len = int(16000 * 2.04)
+    if len(wav_output) > wav_len:
+        wav_output = np.array(wav_output)[:wav_len]
+    else:
+        wav_output.extend(np.zeros(shape=[wav_len - len(wav_output)], dtype=np.float32))
+        wav_output = np.array(wav_output)
+    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).astype(np.float32)
     ps = ps[np.newaxis, np.newaxis, ...]
     return ps
 
@@ -568,7 +608,7 @@ def crop_wav(path, crop_len):
 
 
 if __name__ == '__main__':
-    crop_len = 6
+    crop_len = 3
     crop_wav('save_audio', crop_len)
 ```
 
@@ -598,7 +638,7 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
-RECORD_SECONDS = 6
+RECORD_SECONDS = 3
 WAVE_OUTPUT_FILENAME = "infer_audio.wav"
 
 # 打开录音
@@ -612,13 +652,18 @@ stream = p.open(format=FORMAT,
 
 # 读取音频数据
 def load_data(data_path):
-    wav, sr = librosa.load(data_path)
+    wav, sr = librosa.load(data_path, sr=16000)
     intervals = librosa.effects.split(wav, top_db=20)
     wav_output = []
     for sliced in intervals:
         wav_output.extend(wav[sliced[0]:sliced[1]])
-    wav_output = np.array(wav_output)[:65489]
-    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr).astype(np.float32)
+    wav_len = int(16000 * 2.04)
+    if len(wav_output) > wav_len:
+        wav_output = np.array(wav_output)[:wav_len]
+    else:
+        wav_output.extend(np.zeros(shape=[wav_len - len(wav_output)], dtype=np.float32))
+        wav_output = np.array(wav_output)
+    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).astype(np.float32)
     ps = ps[np.newaxis, np.newaxis, ...]
     return ps
 
@@ -677,6 +722,3 @@ if __name__ == '__main__':
 | 模型名称 | 所用数据集 | 下载地址 |
 | :---: | :---: | :---: |
 | 网络预测模型 | UrbanSound8K | [点击下载](https://resource.doiduoyi.com/#y2c48og) |
-
-
-**Github地址：**[https://github.com/yeyupiaoling/AudioClassification_PaddlePaddle](https://github.com/yeyupiaoling/AudioClassification_PaddlePaddle)
