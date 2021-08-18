@@ -2,19 +2,12 @@ import wave
 import librosa
 import numpy as np
 import pyaudio
-import paddle.fluid as fluid
+import paddle
 
-# 创建执行器
-place = fluid.CPUPlace()
-exe = fluid.Executor(place)
-exe.run(fluid.default_startup_program())
-
-# 保存预测模型路径
-save_path = 'models/'
-# 从模型中获取预测程序、输入数据名称列表、分类器
-[infer_program,
- feeded_var_names,
- target_var] = fluid.io.load_inference_model(dirname=save_path, executor=exe)
+# 加载模型
+model_path = 'models/model'
+model = paddle.jit.load(model_path)
+model.eval()
 
 # 录音参数
 CHUNK = 1024
@@ -34,21 +27,16 @@ stream = p.open(format=FORMAT,
 
 
 # 读取音频数据
-def load_data(data_path):
+def load_data(data_path, spec_len=128):
+    # 读取音频
     wav, sr = librosa.load(data_path, sr=16000)
-    intervals = librosa.effects.split(wav, top_db=20)
-    wav_output = []
-    for sliced in intervals:
-        wav_output.extend(wav[sliced[0]:sliced[1]])
-    wav_len = int(16000 * 2.04)
-    if len(wav_output) > wav_len:
-        wav_output = np.array(wav_output)[:wav_len]
-    else:
-        wav_output.extend(np.zeros(shape=[wav_len - len(wav_output)], dtype=np.float32))
-        wav_output = np.array(wav_output)
-    ps = librosa.feature.melspectrogram(y=wav_output, sr=sr, hop_length=256).astype(np.float32)
-    ps = ps[np.newaxis, np.newaxis, ...]
-    return ps
+    spec_mag = librosa.feature.melspectrogram(y=wav, sr=sr, hop_length=256).astype(np.float32)
+    spec_mag = spec_mag[:spec_len]
+    mean = np.mean(spec_mag, 0, keepdims=True)
+    std = np.std(spec_mag, 0, keepdims=True)
+    spec_mag = (spec_mag - mean) / (std + 1e-5)
+    spec_mag = spec_mag[np.newaxis, np.newaxis, :]
+    return spec_mag
 
 
 # 获取录音数据
@@ -72,12 +60,15 @@ def record_audio():
 
 
 # 预测
-def infer(audio_data):
-    result = exe.run(program=infer_program,
-                     feed={feeded_var_names[0]: audio_data},
-                     fetch_list=target_var)
+def infer(audio_path):
+    data = load_data(audio_path)
+    data = paddle.to_tensor(data, dtype='float32')
+    # 执行预测
+    output = model(data)
+    result = paddle.nn.functional.softmax(output).numpy()
+    print(result)
     # 显示图片并输出结果最大的label
-    lab = np.argsort(result)[0][0][-1]
+    lab = np.argsort(result)[0][-1]
     return lab
 
 
@@ -86,10 +77,9 @@ if __name__ == '__main__':
         while True:
             try:
                 # 加载数据
-                data = load_data(record_audio())
-
+                audio_path = record_audio()
                 # 获取预测结果
-                label = infer(data)
+                label = infer(audio_path)
                 print('预测的标签为：%d' % label)
             except:
                 pass
