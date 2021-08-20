@@ -176,15 +176,12 @@ def train(args):
     if len(args.gpus.split(',')) > 1:
         model = paddle.DataParallel(model)
 
-    # 初始化epoch数
-    last_epoch = 0
     # 学习率衰减
-    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.1, verbose=True)
+    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.8, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Momentum(parameters=model.parameters(),
-                                          learning_rate=scheduler,
-                                          momentum=0.9,
-                                          weight_decay=paddle.regularizer.L2Decay(5e-4))
+    optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
+                                      learning_rate=scheduler,
+                                      weight_decay=paddle.regularizer.L2Decay(5e-4))
     # 获取损失函数
     loss = paddle.nn.CrossEntropyLoss()
 ```
@@ -192,7 +189,7 @@ def train(args):
 最后执行训练，每100个batch打印一次训练日志，训练一轮之后执行测试和保存模型，在测试时，把每个batch的输出都统计，最后求平均值。保存的模型为预测模型，方便之后的预测使用。
 
 ```python
-    for epoch in range(last_epoch, args.num_epoch):
+    for epoch in range(args.num_epoch):
         loss_sum = []
         accuracies = []
         for batch_id, (spec_mag, label) in enumerate(train_loader()):
@@ -231,7 +228,7 @@ def train(args):
 
 # 预测
 
-在训练结束之后，我们得到了一个预测模型，有了预测模型，执行预测非常方便。我们使用这个模型预测音频，输入的音频会裁剪静音部分，所以非静音部分不能小于2.97秒，也不能太长，之后会裁剪非静音前面的2.97秒的音频进行预测。在执行预测之前，需要把音频转换为梅尔频谱数据，并把数据shape转换为(1, 1, 128, 128)，第一个为输入数据的batch大小，如果想多个音频一起数据，可以把他们存放在list中一起预测。最后输出的结果即为预测概率最大的标签。
+在训练结束之后，我们得到了一个预测模型，有了预测模型，执行预测非常方便。我们使用这个模型预测音频，在执行预测之前，需要把音频转换为梅尔频谱数据，并把数据shape转换为(1, 1, 128, 128)，第一个为输入数据的batch大小，如果想多个音频一起数据，可以把他们存放在list中一起预测。最后输出的结果即为预测概率最大的标签。
 
 ```python
 model_path = 'models/model'
@@ -240,11 +237,10 @@ model.eval()
 
 
 # 读取音频数据
-def load_data(data_path, spec_len=128):
+def load_data(data_path):
     # 读取音频
     wav, sr = librosa.load(data_path, sr=16000)
     spec_mag = librosa.feature.melspectrogram(y=wav, sr=sr, hop_length=256).astype(np.float32)
-    spec_mag = spec_mag[:spec_len]
     mean = np.mean(spec_mag, 0, keepdims=True)
     std = np.std(spec_mag, 0, keepdims=True)
     spec_mag = (spec_mag - mean) / (std + 1e-5)
@@ -373,7 +369,7 @@ if __name__ == '__main__':
     crop_wav('save_audio', crop_len)
 ```
 
-创建 `infer_record.py`，这个程序是用来不断进行录音识别，录音时间之所以设置为6秒，就是要保证裁剪后的音频长度大于等于2.97秒。因为识别的时间比较短，所以我们可以大致理解为这个程序在实时录音识别。通过这个应该我们可以做一些比较有趣的事情，比如把麦克风放在小鸟经常来的地方，通过实时录音识别，一旦识别到有鸟叫的声音，如果你的数据集足够强大，有每种鸟叫的声音数据集，这样你还能准确识别是那种鸟叫。如果识别到目标鸟类，就启动程序，例如拍照等等。
+创建 `infer_record.py`，这个程序是用来不断进行录音识别，录音时间之所以设置为3秒。因为识别的时间比较短，所以我们可以大致理解为这个程序在实时录音识别。通过这个应该我们可以做一些比较有趣的事情，比如把麦克风放在小鸟经常来的地方，通过实时录音识别，一旦识别到有鸟叫的声音，如果你的数据集足够强大，有每种鸟叫的声音数据集，这样你还能准确识别是那种鸟叫。如果识别到目标鸟类，就启动程序，例如拍照等等。
 
 ```python
 # 加载模型
@@ -386,7 +382,7 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
-RECORD_SECONDS = 6
+RECORD_SECONDS = 3
 WAVE_OUTPUT_FILENAME = "infer_audio.wav"
 
 # 打开录音
@@ -399,11 +395,10 @@ stream = p.open(format=FORMAT,
 
 
 # 读取音频数据
-def load_data(data_path, spec_len=128):
+def load_data(data_path):
     # 读取音频
     wav, sr = librosa.load(data_path, sr=16000)
     spec_mag = librosa.feature.melspectrogram(y=wav, sr=sr, hop_length=256).astype(np.float32)
-    spec_mag = spec_mag[:spec_len]
     mean = np.mean(spec_mag, 0, keepdims=True)
     std = np.std(spec_mag, 0, keepdims=True)
     spec_mag = (spec_mag - mean) / (std + 1e-5)

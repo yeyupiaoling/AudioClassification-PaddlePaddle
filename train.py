@@ -69,20 +69,17 @@ def train(args):
     if len(args.gpus.split(',')) > 1:
         model = paddle.DataParallel(model)
 
-    # 初始化epoch数
-    last_epoch = 0
     # 学习率衰减
-    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.1, verbose=True)
+    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.8, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Momentum(parameters=model.parameters(),
-                                          learning_rate=scheduler,
-                                          momentum=0.9,
-                                          weight_decay=paddle.regularizer.L2Decay(5e-4))
+    optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
+                                      learning_rate=scheduler,
+                                      weight_decay=paddle.regularizer.L2Decay(5e-4))
 
     # 获取损失函数
     loss = paddle.nn.CrossEntropyLoss()
     # 开始训练
-    for epoch in range(last_epoch, args.num_epoch):
+    for epoch in range(args.num_epoch):
         loss_sum = []
         accuracies = []
         for batch_id, (spec_mag, label) in enumerate(train_loader()):
