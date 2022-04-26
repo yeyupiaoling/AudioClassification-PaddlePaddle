@@ -5,7 +5,7 @@ import pyaudio
 import paddle
 
 # 加载模型
-model_path = 'models/model'
+model_path = 'models/inference'
 model = paddle.jit.load(model_path)
 model.eval()
 

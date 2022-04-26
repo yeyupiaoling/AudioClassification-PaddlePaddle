@@ -8,9 +8,11 @@ import paddle.distributed as dist
 from paddle.io import DataLoader
 from paddle.metric import accuracy
 from paddle.static import InputSpec
-from resnet import resnet34
-from reader import CustomDataset
-from utility import add_arguments, print_arguments
+from sklearn.metrics import confusion_matrix
+
+from utils.resnet import resnet34
+from utils.reader import CustomDataset
+from utils.utility import add_arguments, print_arguments, plot_confusion_matrix
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
@@ -23,22 +25,31 @@ add_arg('learning_rate',    float,  1e-3,                     '初始学习率�
 add_arg('input_shape',      str,    '(None, 1, 128, 128)',    '数据输入的形状')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
+add_arg('label_list_path',   str,   'dataset/label_list.txt', '标签列表路径')
 add_arg('save_model',       str,    'models/',                '模型保存的路径')
+add_arg('resume',           str,    None,                     '恢复训练的模型文件夹，当为None则不使用恢复模型')
 args = parser.parse_args()
 
 
 # 评估模型
 @paddle.no_grad()
-def test(model, test_loader):
+def evaluate(model, test_loader):
     model.eval()
-    accuracies = []
+    accuracies, preds, labels = [], [], []
     for batch_id, (spec_mag, label) in enumerate(test_loader()):
         output = model(spec_mag)
-        label = paddle.reshape(label, shape=(-1, 1))
-        acc = accuracy(input=output, label=label)
+        label1 = paddle.reshape(label, shape=(-1, 1))
+        acc = accuracy(input=output, label=label1)
+        # 模型预测标签
+        pred = paddle.argsort(output, descending=True)[:, 0].numpy().tolist()
+        preds.extend(pred)
+        # 真实标签
+        labels.extend(label.numpy().tolist())
         accuracies.append(acc.numpy()[0])
     model.train()
-    return float(sum(accuracies) / len(accuracies))
+    acc = float(sum(accuracies) / len(accuracies))
+    cm = confusion_matrix(labels, preds)
+    return acc, cm
 
 
 def train(args):
@@ -59,7 +70,10 @@ def train(args):
     test_dataset = CustomDataset(args.test_list_path, model='test', spec_len=input_shape[3])
     test_batch_sampler = paddle.io.BatchSampler(test_dataset, batch_size=args.batch_size)
     test_loader = DataLoader(dataset=test_dataset, batch_sampler=test_batch_sampler, num_workers=args.num_workers)
-
+    # 获取分类标签
+    with open(args.label_list_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        class_labels = [l.replace('\n', '') for l in lines]
     # 获取模型
     model = resnet34(num_classes=args.num_classes)
     if dist.get_rank() == 0:
@@ -75,11 +89,20 @@ def train(args):
     optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
                                       learning_rate=scheduler,
                                       weight_decay=paddle.regularizer.L2Decay(5e-4))
+    # 恢复训练
+    last_epoch = 0
+    if args.resume is not None:
+        model.set_state_dict(paddle.load(os.path.join(args.resume, 'model.pdparams')))
+        optimizer_state = paddle.load(os.path.join(args.resume, 'optimizer.pdopt'))
+        optimizer.set_state_dict(optimizer_state)
+        # 获取预训练的epoch数
+        last_epoch = optimizer_state['LR_Scheduler']['last_epoch']
+        print(f'成功加载第 {last_epoch} 轮的模型参数和优化方法参数')
 
     # 获取损失函数
     loss = paddle.nn.CrossEntropyLoss()
     # 开始训练
-    for epoch in range(args.num_epoch):
+    for epoch in range(last_epoch, args.num_epoch):
         loss_sum = []
         accuracies = []
         for batch_id, (spec_mag, label) in enumerate(train_loader()):
@@ -100,15 +123,17 @@ def train(args):
                     datetime.now(), epoch, batch_id, len(train_loader), sum(loss_sum) / len(loss_sum), sum(accuracies) / len(accuracies)))
         # 多卡训练只使用一个进程执行评估和保存模型
         if dist.get_rank() == 0:
-            acc = test(model, test_loader)
+            acc, cm = evaluate(model, test_loader)
+            plot_confusion_matrix(cm=cm, save_path=f'log/混淆矩阵_{epoch}.png', class_labels=class_labels, show=False)
             print('='*70)
             print('[%s] Test %d, accuracy: %f' % (datetime.now(), epoch, acc))
             print('='*70)
             # 保存预测模型
-            if not os.path.exists(args.save_model):
-                os.makedirs(args.save_model)
+            os.makedirs(args.save_model, exist_ok=True)
+            paddle.save(model.state_dict(), os.path.join(args.save_model, 'model.pdparams'))
+            paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'optimizer.pdopt'))
             paddle.jit.save(layer=model,
-                            path=os.path.join(args.save_model, 'model'),
+                            path=os.path.join(args.save_model, 'inference'),
                             input_spec=[
                                 InputSpec(shape=[input_shape[0], input_shape[1], input_shape[2], input_shape[3]],
                                           dtype='float32')])

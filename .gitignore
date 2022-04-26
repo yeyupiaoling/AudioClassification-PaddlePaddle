@@ -3,3 +3,4 @@ __pycache__/
 dataset/
 models/
 infer_audio.wav
+log/

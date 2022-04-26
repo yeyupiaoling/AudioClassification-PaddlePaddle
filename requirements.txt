@@ -1,1 +1,4 @@
-paddlepaddle-gpu==2.1.1
+paddlepaddle-gpu>=2.1.1
+pytest-runner
+librosa==0.9.1
+matplotlib
