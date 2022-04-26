@@ -121,7 +121,7 @@ def train(args):
             # 多卡训练只使用一个进程打印
             if batch_id % 100 == 0 and dist.get_rank() == 0:
                 print(f'[{datetime.now()}] Train epoch [{epoch}/{args.num_epoch}], batch: {batch_id}/{len(train_loader)}, '
-                      f'lr: {scheduler.get_lr():.8f}, loss: {sum(loss_sum) / len(loss_sum):.8f}, '
+                      f'lr: {scheduler.get_lr():.8f}, loss: {(sum(loss_sum) / len(loss_sum)).numpy()[0]:.8f}, '
                       f'accuracy: {sum(accuracies) / len(accuracies):.8f}')
         # 多卡训练只使用一个进程执行评估和保存模型
         if dist.get_rank() == 0:
