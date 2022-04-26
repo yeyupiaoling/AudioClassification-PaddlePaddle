@@ -32,8 +32,8 @@ def plot_confusion_matrix(cm, save_path, class_labels, title='Confusion Matrix',
         # 忽略值太小的
         if c < 1e-4:continue
         plt.text(x_val, y_val, "%0.2f" % (c,), color='red', fontsize=15, va='center', ha='center')
-
-    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.binary)
+    m = np.max(cm)
+    plt.imshow(cm / m, interpolation='nearest', cmap=plt.cm.binary)
     plt.title(title)
     plt.colorbar()
     xlocations = np.array(range(len(class_labels)))
