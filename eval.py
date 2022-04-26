@@ -7,8 +7,8 @@ from paddle.io import DataLoader
 from paddle.metric import accuracy
 from sklearn.metrics import confusion_matrix
 
-from utils.reader import CustomDataset
-from utils.resnet import resnet34
+from utils.ecapa_tdnn import EcapaTdnn
+from utils.reader import CustomDataset, collate_fn
 from utils.utility import add_arguments, print_arguments, plot_confusion_matrix
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -18,7 +18,6 @@ add_arg('num_workers',      int,    4,                        '读取数据的�
 add_arg('num_epoch',        int,    50,                       '训练的轮数')
 add_arg('num_classes',      int,    10,                       '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
-add_arg('input_shape',      str,    '(None, 1, 128, 128)',    '数据输入的形状')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
 add_arg('label_list_path',   str,   'dataset/label_list.txt', '标签列表路径')
 add_arg('model_path',       str,    'models/model.pdparams',  '模型保存的路径')
@@ -26,19 +25,19 @@ args = parser.parse_args()
 
 
 def evaluate():
-    # 数据输入的形状
-    input_shape = eval(args.input_shape)
     # 获取评估数据
-    test_dataset = CustomDataset(args.test_list_path, model='test', spec_len=input_shape[3])
-    test_batch_sampler = paddle.io.BatchSampler(test_dataset, batch_size=args.batch_size)
-    test_loader = DataLoader(dataset=test_dataset, batch_sampler=test_batch_sampler, num_workers=args.num_workers)
+    test_dataset = CustomDataset(args.test_list_path, mode='eval')
+    test_loader = DataLoader(dataset=test_dataset,
+                             batch_size=args.batch_size,
+                             collate_fn=collate_fn,
+                             num_workers=args.num_workers)
     # 获取分类标签
     with open(args.label_list_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         class_labels = [l.replace('\n', '') for l in lines]
     # 获取模型
-    model = resnet34(num_classes=args.num_classes)
-    paddle.summary(model, input_size=input_shape)
+    model = EcapaTdnn(num_classes=args.num_classes)
+    paddle.summary(model, input_size=(1, 80, 98))
     # 加载模型
     model.set_state_dict(paddle.load(args.model_path))
     model.eval()
@@ -64,7 +63,7 @@ def evaluate():
     # 精确率
     precision = TP / (TP + FP + 1e-6)
     # 召回率
-    recall = TP / (TP + FN)
+    recall = TP / (TP + FN + 1e-6)
     print('分类准确率: {:.4f}, 平均精确率: {:.4f}, 平均召回率: {:.4f}'.format(acc, np.mean(precision), np.mean(recall)))
     plot_confusion_matrix(cm=cm, save_path='log/混淆矩阵_eval.png', class_labels=class_labels)
 

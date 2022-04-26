@@ -7,11 +7,10 @@ import paddle
 import paddle.distributed as dist
 from paddle.io import DataLoader
 from paddle.metric import accuracy
-from paddle.static import InputSpec
 from sklearn.metrics import confusion_matrix
 
-from utils.resnet import resnet34
-from utils.reader import CustomDataset
+from utils.ecapa_tdnn import EcapaTdnn
+from utils.reader import CustomDataset, collate_fn
 from utils.utility import add_arguments, print_arguments, plot_confusion_matrix
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -22,7 +21,6 @@ add_arg('num_workers',      int,    4,                        '读取数据的�
 add_arg('num_epoch',        int,    50,                       '训练的轮数')
 add_arg('num_classes',      int,    10,                       '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
-add_arg('input_shape',      str,    '(None, 1, 128, 128)',    '数据输入的形状')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
 add_arg('label_list_path',   str,   'dataset/label_list.txt', '标签列表路径')
@@ -56,28 +54,31 @@ def train(args):
     # 设置支持多卡训练
     if len(args.gpus.split(',')) > 1:
         dist.init_parallel_env()
-    # 数据输入的形状
-    input_shape = eval(args.input_shape)
     # 获取数据
-    train_dataset = CustomDataset(args.train_list_path, model='train', spec_len=input_shape[3])
+    train_dataset = CustomDataset(args.train_list_path, mode='train')
     # 设置支持多卡训练
     if len(args.gpus.split(',')) > 1:
         train_batch_sampler = paddle.io.DistributedBatchSampler(train_dataset, batch_size=args.batch_size, shuffle=True)
     else:
         train_batch_sampler = paddle.io.BatchSampler(train_dataset, batch_size=args.batch_size, shuffle=True)
-    train_loader = DataLoader(dataset=train_dataset, batch_sampler=train_batch_sampler, num_workers=args.num_workers)
-
-    test_dataset = CustomDataset(args.test_list_path, model='test', spec_len=input_shape[3])
-    test_batch_sampler = paddle.io.BatchSampler(test_dataset, batch_size=args.batch_size)
-    test_loader = DataLoader(dataset=test_dataset, batch_sampler=test_batch_sampler, num_workers=args.num_workers)
+    train_loader = DataLoader(dataset=train_dataset,
+                              batch_sampler=train_batch_sampler,
+                              collate_fn=collate_fn,
+                              num_workers=args.num_workers)
+    # 测试数据
+    test_dataset = CustomDataset(args.test_list_path, mode='eval')
+    test_loader = DataLoader(dataset=test_dataset,
+                             batch_size=args.batch_size,
+                             collate_fn=collate_fn,
+                             num_workers=args.num_workers)
     # 获取分类标签
     with open(args.label_list_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         class_labels = [l.replace('\n', '') for l in lines]
     # 获取模型
-    model = resnet34(num_classes=args.num_classes)
+    model = EcapaTdnn(num_classes=args.num_classes)
     if dist.get_rank() == 0:
-        paddle.summary(model, input_size=input_shape)
+        paddle.summary(model, input_size=(1, 80, 98))
 
     # 设置支持多卡训练
     if len(args.gpus.split(',')) > 1:
@@ -119,25 +120,20 @@ def train(args):
             loss_sum.append(los)
             # 多卡训练只使用一个进程打印
             if batch_id % 100 == 0 and dist.get_rank() == 0:
-                print('[%s] Train epoch %d, batch: %d/%d, loss: %f, accuracy: %f' % (
-                    datetime.now(), epoch, batch_id, len(train_loader), sum(loss_sum) / len(loss_sum), sum(accuracies) / len(accuracies)))
+                print(f'[{datetime.now()}] Train epoch [{epoch}/{args.num_epoch}], batch: {batch_id}/{len(train_loader)}, '
+                      f'lr: {scheduler.get_lr():.8f}, loss: {sum(loss_sum) / len(loss_sum):.8f}, '
+                      f'accuracy: {sum(accuracies) / len(accuracies):.8f}')
         # 多卡训练只使用一个进程执行评估和保存模型
         if dist.get_rank() == 0:
             acc, cm = evaluate(model, test_loader)
             plot_confusion_matrix(cm=cm, save_path=f'log/混淆矩阵_{epoch}.png', class_labels=class_labels, show=False)
             print('='*70)
-            print('[%s] Test %d, accuracy: %f' % (datetime.now(), epoch, acc))
+            print(f'[{datetime.now()}] Test {epoch}, accuracy: {acc}')
             print('='*70)
             # 保存预测模型
             os.makedirs(args.save_model, exist_ok=True)
             paddle.save(model.state_dict(), os.path.join(args.save_model, 'model.pdparams'))
             paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'optimizer.pdopt'))
-            paddle.jit.save(layer=model,
-                            path=os.path.join(args.save_model, 'inference'),
-                            input_spec=[
-                                InputSpec(shape=[input_shape[0], input_shape[1], input_shape[2], input_shape[3]],
-                                          dtype='float32')])
-
         scheduler.step()
 
 
