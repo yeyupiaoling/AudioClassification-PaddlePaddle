@@ -18,7 +18,7 @@ add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('gpus',             str,    '0',                      '训练使用的GPU序号，使用英文逗号,隔开，如：0,1')
 add_arg('batch_size',       int,    32,                       '训练的批量大小')
 add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
-add_arg('num_epoch',        int,    50,                       '训练的轮数')
+add_arg('num_epoch',        int,    30,                       '训练的轮数')
 add_arg('num_classes',      int,    10,                       '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
@@ -85,7 +85,7 @@ def train(args):
         model = paddle.DataParallel(model)
 
     # 学习率衰减
-    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.8, verbose=True)
+    scheduler = paddle.optimizer.lr.CosineAnnealingDecay(learning_rate=args.learning_rate, T_max=args.num_epoch)
     # 设置优化方法
     optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
                                       learning_rate=scheduler,
