@@ -1,6 +1,10 @@
 import random
 import sys
+
+import warnings
 from datetime import datetime
+
+warnings.filterwarnings("ignore")
 
 import librosa
 import numpy as np
@@ -8,7 +12,7 @@ from paddle.io import Dataset
 
 
 # 加载并预处理音频
-def load_audio(audio_path, mode='train', sr=16000, chunk_duration=3):
+def load_audio(audio_path, feature_method='melspectrogram', mode='train', sr=16000, chunk_duration=3, augmentors=None):
     # 读取音频数据
     wav, sr_ret = librosa.load(audio_path, sr=sr)
     if mode == 'train':
@@ -26,15 +30,29 @@ def load_audio(audio_path, mode='train', sr=16000, chunk_duration=3):
             if random.random() > 0.5:
                 wav[:random.randint(1, sr // 4)] = 0
                 wav = wav[:-random.randint(1, sr // 4)]
+        # 数据增强
+        if augmentors is not None:
+            for key, augmentor in augmentors.items():
+                if key == 'specaug':continue
+                wav = augmentor(wav)
     elif mode == 'eval':
         # 为避免显存溢出，只裁剪指定长度
         num_wav_samples = wav.shape[0]
         num_chunk_samples = int(chunk_duration * sr)
         if num_wav_samples > num_chunk_samples + 1:
             wav = wav[:num_chunk_samples]
-    # 计算梅尔频谱
-    features = librosa.feature.melspectrogram(y=wav, sr=sr, n_fft=400, n_mels=80, hop_length=160, win_length=400)
-    features = librosa.power_to_db(features, ref=1.0, amin=1e-10, top_db=None)
+    # 获取音频特征
+    if feature_method == 'melspectrogram':
+        # 计算梅尔频谱
+        features = librosa.feature.melspectrogram(y=wav, sr=sr, n_fft=400, n_mels=80, hop_length=160, win_length=400)
+        features = librosa.power_to_db(features, ref=1.0, amin=1e-10, top_db=None)
+    elif feature_method == 'spectrogram':
+        # 计算声谱图
+        linear = librosa.stft(wav, n_fft=400, win_length=400, hop_length=160)
+        features, _ = librosa.magphase(linear)
+        features = librosa.power_to_db(features, ref=1.0, amin=1e-10, top_db=None)
+    else:
+        raise Exception(f'预处理方法 {feature_method} 不存在！')
     # 归一化
     mean = np.mean(features, 0, keepdims=True)
     std = np.std(features, 0, keepdims=True)
@@ -44,21 +62,24 @@ def load_audio(audio_path, mode='train', sr=16000, chunk_duration=3):
 
 # 数据加载器
 class CustomDataset(Dataset):
-    def __init__(self, data_list_path, mode='train', sr=16000, chunk_duration=3):
+    def __init__(self, data_list_path, feature_method='melspectrogram', mode='train', sr=16000, chunk_duration=3, augmentors=None):
         super(CustomDataset, self).__init__()
         # 当预测时不需要获取数据
         if data_list_path is not None:
             with open(data_list_path, 'r') as f:
                 self.lines = f.readlines()
+        self.feature_method = feature_method
         self.mode = mode
         self.sr = sr
         self.chunk_duration = chunk_duration
+        self.augmentors = augmentors
 
     def __getitem__(self, idx):
         try:
             audio_path, label = self.lines[idx].replace('\n', '').split('\t')
             # 加载并预处理音频
-            features = load_audio(audio_path, mode=self.mode, sr=self.sr, chunk_duration=self.chunk_duration)
+            features = load_audio(audio_path, feature_method=self.feature_method, mode=self.mode, sr=self.sr,
+                                  chunk_duration=self.chunk_duration, augmentors=self.augmentors)
             return features, np.array(int(label), dtype=np.int64)
         except Exception as ex:
             print(f"[{datetime.now()}] 数据: {self.lines[idx]} 出错，错误信息: {ex}", file=sys.stderr)
@@ -67,6 +88,15 @@ class CustomDataset(Dataset):
 
     def __len__(self):
         return len(self.lines)
+
+    @property
+    def input_size(self):
+        if self.feature_method == 'melspectrogram':
+            return 80
+        elif self.feature_method == 'spectrogram':
+            return 201
+        else:
+            raise Exception(f'预处理方法 {self.feature_method} 不存在！')
 
 
 # 对一个batch的数据处理
@@ -78,6 +108,7 @@ def collate_fn(batch):
     batch_size = len(batch)
     # 以最大的长度创建0张量
     inputs = np.zeros((batch_size, freq_size, max_audio_length), dtype='float32')
+    input_lens = []
     labels = []
     for x in range(batch_size):
         sample = batch[x]
@@ -86,6 +117,8 @@ def collate_fn(batch):
         seq_length = tensor.shape[1]
         # 将数据插入都0张量中，实现了padding
         inputs[x, :, :seq_length] = tensor[:, :]
+        input_lens.append(seq_length/max_audio_length)
+    input_lens = np.array(input_lens, dtype='float32')
     labels = np.array(labels, dtype='int64')
     # 打乱数据
-    return inputs, labels
+    return inputs, labels, input_lens

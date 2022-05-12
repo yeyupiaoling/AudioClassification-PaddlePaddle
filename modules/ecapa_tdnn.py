@@ -345,8 +345,8 @@ class SERes2NetBlock(nn.Layer):
 class EcapaTdnn(nn.Layer):
     def __init__(
             self,
-            num_classes,
-            input_size=80,
+            num_class,
+            input_size,
             lin_neurons=192,
             activation=nn.ReLU,
             channels=[512, 512, 512, 512, 1536],
@@ -360,7 +360,6 @@ class EcapaTdnn(nn.Layer):
            The paper is refered as "ECAPA-TDNN: Emphasized Channel Attention, Propagation and Aggregation in TDNN Based Speaker Verification"
            whose url is: https://arxiv.org/abs/2005.07143
         Args:
-            num_classes (_type_): num classes
             input_size (_type_): input fature dimension
             lin_neurons (int, optional): speaker embedding size. Defaults to 192.
             activation (paddle.nn.class, optional): activation function. Defaults to nn.ReLU.
@@ -421,7 +420,7 @@ class EcapaTdnn(nn.Layer):
             out_channels=self.emb_size,
             kernel_size=1, )
 
-        self.output = nn.Linear(self.emb_size, num_classes)
+        self.output = nn.Linear(self.emb_size, num_class)
 
     def forward(self, x, lengths=None):
         """
