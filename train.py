@@ -24,15 +24,14 @@ add_arg('use_model',        str,    'ecapa_tdnn',             '所使用的模�
 add_arg('batch_size',       int,    32,                       '训练的批量大小')
 add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
 add_arg('num_epoch',        int,    50,                       '训练的轮数')
-add_arg('num_speakers',     int,    10,                       '分类的类别数量')
+add_arg('num_class',        int,    10,                       '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
-add_arg('label_list_path',   str,   'dataset/label_list.txt', '标签列表路径')
 add_arg('save_model_dir',   str,    'output/models/',         '模型保存的路径')
 add_arg('feature_method',   str,    'melspectrogram',         '音频特征提取方法', choices=['melspectrogram', 'spectrogram'])
 add_arg('augment_conf_path',str,    'configs/augment.yml',    '数据增强的配置文件，为json格式')
-add_arg('resume',           str,    'output/models',                     '恢复训练的模型文件夹，当为None则不使用恢复模型')
+add_arg('resume',           str,    None,                     '恢复训练的模型文件夹，当为None则不使用恢复模型')
 add_arg('pretrained_model', str,    None,                     '预训练模型的模型文件夹，当为None则不使用预训练模型')
 args = parser.parse_args()
 
@@ -97,13 +96,9 @@ def train():
                              batch_size=args.batch_size,
                              collate_fn=collate_fn,
                              num_workers=args.num_workers)
-    # 获取分类标签
-    with open(args.label_list_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-        class_labels = [l.replace('\n', '') for l in lines]
     # 获取模型
     if args.use_model == 'ecapa_tdnn':
-        model = EcapaTdnn(num_class=args.num_speakers, input_size=train_dataset.input_size)
+        model = EcapaTdnn(num_class=args.num_class, input_size=train_dataset.input_size)
     else:
         raise Exception(f'{args.use_model} 模型不存在！')
     if local_rank == 0:
