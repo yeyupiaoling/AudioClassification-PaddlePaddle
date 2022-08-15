@@ -39,9 +39,9 @@ def infer():
     data = paddle.to_tensor(data, dtype='float32')
     # 执行预测
     output = model(data)
-    result = paddle.nn.functional.softmax(output).numpy()
+    result = paddle.nn.functional.softmax(output).numpy()[0]
     # 显示图片并输出结果最大的label
-    lab = np.argsort(result)[0][-1]
+    lab = np.argsort(result)[-1]
     score = result[lab]
     print(f'音频：{args.audio_path} 的预测结果标签为：{class_labels[lab]}，得分：{score}')
 
