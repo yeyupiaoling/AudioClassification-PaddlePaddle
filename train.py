@@ -23,6 +23,7 @@ add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('use_model',        str,    'ecapa_tdnn',             '所使用的模型')
 add_arg('batch_size',       int,    32,                       '训练的批量大小')
 add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
+add_arg('audio_duration',   int,    3,                        '训练的音频长度，单位秒')
 add_arg('num_epoch',        int,    50,                       '训练的轮数')
 add_arg('num_class',        int,    10,                       '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
@@ -75,7 +76,7 @@ def train():
                                   feature_method=args.feature_method,
                                   mode='train',
                                   sr=16000,
-                                  chunk_duration=3,
+                                  chunk_duration=args.audio_duration,
                                   augmentors=augmentors)
     # 设置支持多卡训练
     if nranks > 1:
@@ -91,7 +92,7 @@ def train():
                                  feature_method=args.feature_method,
                                  mode='eval',
                                  sr=16000,
-                                 chunk_duration=3)
+                                 chunk_duration=args.audio_duration)
     eval_loader = DataLoader(dataset=eval_dataset,
                              batch_size=args.batch_size,
                              collate_fn=collate_fn,
