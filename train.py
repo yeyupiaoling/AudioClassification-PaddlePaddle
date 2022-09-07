@@ -23,14 +23,15 @@ add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('use_model',        str,    'ecapa_tdnn',             '所使用的模型')
 add_arg('batch_size',       int,    32,                       '训练的批量大小')
 add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
-add_arg('audio_duration',   int,    3,                        '训练的音频长度，单位秒')
-add_arg('num_epoch',        int,    50,                       '训练的轮数')
+add_arg('audio_duration',   float,  3,                        '训练的音频长度，单位秒')
+add_arg('min_duration',     float,  0.5,                      '训练的最短音频长度，单位秒')
+add_arg('num_epoch',        int,    30,                       '训练的轮数')
 add_arg('num_class',        int,    10,                       '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
 add_arg('save_model_dir',   str,    'output/models/',         '模型保存的路径')
-add_arg('feature_method',   str,    'melspectrogram',         '音频特征提取方法', choices=['melspectrogram', 'spectrogram'])
+add_arg('feature_method',   str,    'melspectrogram',         '音频特征提取方法', choices=['melspectrogram', 'spectrogram', 'fbank_htk'])
 add_arg('augment_conf_path',str,    'configs/augment.yml',    '数据增强的配置文件，为json格式')
 add_arg('resume',           str,    None,                     '恢复训练的模型文件夹，当为None则不使用恢复模型')
 add_arg('pretrained_model', str,    None,                     '预训练模型的模型文件夹，当为None则不使用预训练模型')
@@ -77,6 +78,7 @@ def train():
                                   mode='train',
                                   sr=16000,
                                   chunk_duration=args.audio_duration,
+                                  min_duration=args.min_duration,
                                   augmentors=augmentors)
     # 设置支持多卡训练
     if nranks > 1:
@@ -151,6 +153,7 @@ def train():
     for epoch in range(last_epoch, args.num_epoch):
         loss_sum = []
         accuracies = []
+        train_times = []
         start = time.time()
         for batch_id, (audio, label, audio_lens) in enumerate(train_loader()):
             output = model(audio, audio_lens)
@@ -164,9 +167,10 @@ def train():
             acc = accuracy(input=paddle.nn.functional.softmax(output), label=label)
             accuracies.append(acc.numpy()[0])
             loss_sum.append(los.numpy()[0])
+            train_times.append((time.time() - start) * 1000)
             # 多卡训练只使用一个进程打印
-            if batch_id % 10 == 0 and local_rank == 0:
-                eta_sec = ((time.time() - start) * 1000) * (sum_batch - (epoch - last_epoch) * len(train_loader) - batch_id)
+            if batch_id % 100 == 0 and local_rank == 0:
+                eta_sec = (sum(train_times) / len(train_times)) * (sum_batch - (epoch - last_epoch) * len(train_loader) - batch_id)
                 eta_str = str(timedelta(seconds=int(eta_sec / 1000)))
                 print(f'[{datetime.now()}] '
                       f'Train epoch [{epoch}/{args.num_epoch}], '

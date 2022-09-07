@@ -14,8 +14,8 @@ add_arg('use_model',        str,    'ecapa_tdnn',             '所使用的模�
 add_arg('audio_path',       str,    'dataset/UrbanSound8K/audio/fold5/156634-5-2-5.wav', '音频路径')
 add_arg('num_classes',      int,    10,                        '分类的类别数量')
 add_arg('label_list_path',  str,    'dataset/label_list.txt',  '标签列表路径')
+add_arg('feature_method',   str,    'melspectrogram',          '音频特征提取方法', choices=['melspectrogram', 'spectrogram', 'fbank_htk'])
 add_arg('model_path',       str,    'output/models/model.pdparams',   '模型保存的路径')
-add_arg('feature_method',   str,    'melspectrogram',          '音频特征提取方法', choices=['melspectrogram', 'spectrogram'])
 args = parser.parse_args()
 
 
@@ -34,7 +34,7 @@ model.eval()
 
 
 def infer():
-    data = load_audio(args.audio_path, mode='infer')
+    data = load_audio(args.audio_path, mode='infer', feature_method=args.feature_method)
     data = data[np.newaxis, :]
     data = paddle.to_tensor(data, dtype='float32')
     # 执行预测
