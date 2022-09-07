@@ -151,7 +151,7 @@ class CustomDataset(Dataset):
                                   augmentors=self.augmentors)
             return features, np.array(int(label), dtype=np.int64)
         except Exception as ex:
-            # print(f"[{datetime.now()}] 数据: {self.lines[idx]} 出错，错误信息: {ex}", file=sys.stderr)
+            print(f"[{datetime.now()}] 数据: {self.lines[idx]} 出错，错误信息: {ex}", file=sys.stderr)
             rnd_idx = np.random.randint(self.__len__())
             return self.__getitem__(rnd_idx)
 
