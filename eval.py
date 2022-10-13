@@ -20,7 +20,7 @@ add_arg('audio_duration',   float,  3,                        '评估的音频�
 add_arg('num_class',        int,    10,                       '分类的类别数量')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
 add_arg('label_list_path',  str,    'dataset/label_list.txt', '标签列表路径')
-add_arg('feature_method',   str,    'melspectrogram',         '音频特征提取方法', choices=['melspectrogram', 'spectrogram', 'fbank_htk'])
+add_arg('feature_method',   str,    'melspectrogram',         '音频特征提取方法', choices=['melspectrogram', 'spectrogram'])
 add_arg('model_path',       str,    'output/models/model.pdparams',  '模型保存的路径')
 args = parser.parse_args()
 

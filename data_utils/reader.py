@@ -1,21 +1,15 @@
 import random
 import sys
-
 from datetime import datetime
-from data_utils.fbank_htk import add_dither, fbank_htk, povey_window, mel_fbank_mx, cmvn_floating_kaldi
-from data_utils.utils import vad
 
+import ffmpeg
 import librosa
 import numpy as np
+import resampy
+import soundfile
 from paddle.io import Dataset
 
-
-WINDOW = povey_window(winlen=400)
-FBANK_MX = mel_fbank_mx(winlen_nfft=400,
-                        fs=16000,
-                        NUMCHANS=64,
-                        LOFREQ=20,
-                        HIFREQ=7600)
+from data_utils.utils import vad
 
 
 def load_audio(audio_path,
@@ -39,7 +33,16 @@ def load_audio(audio_path,
     :return:
     """
     # 读取音频数据
-    wav, sr_ret = librosa.load(audio_path, sr=sr)
+    try:
+        wav, samplerate = soundfile.read(audio_path, dtype='float32')
+        if samplerate != sr:
+            wav = resampy.resample(wav, sr_orig=samplerate, sr_new=sr)
+    except:
+        # 使用ffmpeg读取音频，以支持更多格式数据
+        out, _ = (ffmpeg.input(audio_path, threads=0)
+                  .output("-", format="s16le", acodec="pcm_s16le", ac=1, ar=sr)
+                  .run(cmd=["ffmpeg", "-nostdin"], capture_stdout=True, capture_stderr=True))
+        wav = np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
     # 裁剪静音
     if do_vad:
         wav = vad(wav)
@@ -78,16 +81,7 @@ def load_audio(audio_path,
         if num_wav_samples > num_chunk_samples + 1:
             wav = wav[:num_chunk_samples]
     # 获取音频特征
-    if feature_method == 'fbank_htk':
-        signal = add_dither((wav * 2 ** 15).astype(int))
-        features = fbank_htk(signal,
-                             window=WINDOW,
-                             noverlap=240,
-                             fbank_mx=FBANK_MX,
-                             USEPOWER=True,
-                             ZMEANSOURCE=True)
-        features = features.T
-    elif feature_method == 'melspectrogram':
+    if feature_method == 'melspectrogram':
         # 计算梅尔频谱
         features = librosa.feature.melspectrogram(y=wav, sr=sr, n_fft=400, n_mels=80, hop_length=160, win_length=400)
         features = librosa.power_to_db(features, ref=1.0, amin=1e-10, top_db=None)

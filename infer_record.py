@@ -15,7 +15,7 @@ add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('use_model',        str,    'ecapa_tdnn',              '所使用的模型')
 add_arg('num_classes',      int,    10,                        '分类的类别数量')
 add_arg('label_list_path',  str,    'dataset/label_list.txt',  '标签列表路径')
-add_arg('feature_method',   str,    'melspectrogram',          '音频特征提取方法', choices=['melspectrogram', 'spectrogram', 'fbank_htk'])
+add_arg('feature_method',   str,    'melspectrogram',          '音频特征提取方法', choices=['melspectrogram', 'spectrogram'])
 add_arg('model_path',       str,    'output/models/model.pdparams',   '模型保存的路径')
 args = parser.parse_args()
 
