@@ -79,6 +79,7 @@ def train():
                                   sr=16000,
                                   chunk_duration=args.audio_duration,
                                   min_duration=args.min_duration,
+                                  do_vad=False,
                                   augmentors=augmentors)
     # 设置支持多卡训练
     if nranks > 1:
@@ -94,6 +95,7 @@ def train():
                                  feature_method=args.feature_method,
                                  mode='eval',
                                  sr=16000,
+                                 do_vad=False,
                                  chunk_duration=args.audio_duration)
     eval_loader = DataLoader(dataset=eval_dataset,
                              batch_size=args.batch_size,
