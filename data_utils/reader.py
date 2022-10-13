@@ -35,6 +35,11 @@ def load_audio(audio_path,
     # 读取音频数据
     try:
         wav, samplerate = soundfile.read(audio_path, dtype='float32')
+        # 多通道转单通道
+        if wav.ndim > 1:
+            wav = wav.T
+            wav = np.mean(wav, axis=tuple(range(wav.ndim - 1)))
+        # 重采样
         if samplerate != sr:
             wav = resampy.resample(wav, sr_orig=samplerate, sr_new=sr)
     except:
