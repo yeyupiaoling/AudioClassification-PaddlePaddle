@@ -1,6 +1,10 @@
 __pycache__/
 .idea/
+build/
+dist/
+ppacls.egg-info/
 dataset/
-models/
+output/
+test.py
 infer_audio.wav
 log/
