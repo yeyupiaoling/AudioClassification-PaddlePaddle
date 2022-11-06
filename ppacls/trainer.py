@@ -5,7 +5,6 @@ import shutil
 import time
 from datetime import timedelta
 
-import numpy as np
 import paddle
 from paddle.distributed import fleet
 from paddle.io import DataLoader
