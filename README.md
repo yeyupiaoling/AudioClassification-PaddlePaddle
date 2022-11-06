@@ -24,7 +24,7 @@
 conda install paddlepaddle-gpu==2.3.2 cudatoolkit=10.2 --channel https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/Paddle/
 ```
 
- - 安装PPASR库。
+ - 安装ppacls库。
  
 使用pip安装，命令如下：
 ```shell
