@@ -9,7 +9,6 @@ import paddle
 from paddle.distributed import fleet
 from paddle.io import DataLoader
 from paddle.metric import accuracy
-from paddle.optimizer.lr import CosineAnnealingDecay
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from visualdl import LogWriter
@@ -20,6 +19,7 @@ from ppacls.data_utils.featurizer.audio_featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
 from ppacls.models.ecapa_tdnn import EcapaTdnn
 from ppacls.utils.logger import setup_logger
+from ppacls.utils.lr import cosine_decay_with_warmup
 from ppacls.utils.utils import dict_to_object, plot_confusion_matrix
 
 logger = setup_logger(__name__)
@@ -96,9 +96,11 @@ class PPAClsTrainer(object):
         # 获取损失函数
         self.loss = paddle.nn.CrossEntropyLoss()
         if is_train:
-            # 设置优化方法
-            self.scheduler = CosineAnnealingDecay(learning_rate=float(self.configs.optimizer_conf.learning_rate),
-                                                  T_max=self.configs.train_conf.max_epoch)
+            # 学习率衰减
+            self.scheduler = cosine_decay_with_warmup(learning_rate=float(self.configs.optimizer_conf.learning_rate),
+                                                      max_epochs=int(self.configs.train_conf.max_epoch * 1.2),
+                                                      step_per_epoch=len(self.train_loader))
+            # 优化方法
             self.optimizer = paddle.optimizer.Momentum(parameters=self.model.parameters(),
                                                        learning_rate=self.scheduler,
                                                        momentum=0.9,
@@ -216,8 +218,8 @@ class PPAClsTrainer(object):
             # 固定步数也要保存一次模型
             if batch_id % 10000 == 0 and batch_id != 0 and local_rank == 0:
                 self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id)
+            self.scheduler.step()
             start = time.time()
-        self.scheduler.step()
 
     def train(self,
               save_model_path='models/',
@@ -262,7 +264,6 @@ class PPAClsTrainer(object):
 
         test_step, self.train_step = 0, 0
         last_epoch += 1
-        self.train_batch_sampler.epoch = last_epoch
         if local_rank == 0:
             writer.add_scalar('Train/lr', self.scheduler.get_lr(), last_epoch)
         # 开始训练
@@ -284,7 +285,7 @@ class PPAClsTrainer(object):
                 test_step += 1
                 self.model.train()
                 # 记录学习率
-                writer.add_scalar('Train/lr', self.scheduler.last_lr, epoch_id)
+                writer.add_scalar('Train/lr', self.scheduler.get_lr(), epoch_id)
                 # # 保存最优模型
                 if loss <= best_loss:
                     best_loss = loss
