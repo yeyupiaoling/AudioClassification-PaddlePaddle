@@ -6,5 +6,5 @@ ppacls.egg-info/
 dataset/
 output/
 test.py
-infer_audio.wav
 log/
+models/
