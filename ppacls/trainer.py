@@ -264,7 +264,6 @@ class PPAClsTrainer(object):
 
         test_step, self.train_step = 0, 0
         last_epoch += 1
-        self.train_batch_sampler.epoch = last_epoch
         if local_rank == 0:
             writer.add_scalar('Train/lr', self.scheduler.get_lr(), last_epoch)
         # 开始训练
