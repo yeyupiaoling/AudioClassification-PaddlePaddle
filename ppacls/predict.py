@@ -24,9 +24,14 @@ class PPAClsPredictor:
         :param model_path: 导出的预测模型文件夹路径
         :param use_gpu: 是否使用GPU预测
         """
+        if use_gpu:
+            assert paddle.is_compiled_with_cuda(), 'GPU不可用'
+            paddle.device.set_device("gpu")
+        else:
+            os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+            paddle.device.set_device("cpu")
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
-        self.use_gpu = use_gpu
         self._audio_featurizer = AudioFeaturizer(**self.configs.preprocess_conf)
         # 创建模型
         if not os.path.exists(model_path):
@@ -34,8 +39,8 @@ class PPAClsPredictor:
         # 获取模型
         if self.configs.use_model == 'ecapa_tdnn':
             self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim,
-                              num_class=self.configs.dataset_conf.num_class,
-                              **self.configs.model_conf)
+                                       num_class=self.configs.dataset_conf.num_class,
+                                       **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # 加载模型

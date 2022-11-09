@@ -2,8 +2,6 @@ import numpy as np
 import paddle
 from paddleaudio.compliance.kaldi import fbank, spectrogram
 
-from ppacls.data_utils.utils import cmvn_floating_kaldi
-
 
 class AudioFeaturizer(object):
     """音频特征器
@@ -47,14 +45,15 @@ class AudioFeaturizer(object):
         if self._use_dB_normalization:
             audio_segment.normalize(target_db=self._target_dB)
         # 获取音频特征
-        waveform = paddle.to_tensor(np.expand_dims(audio_segment.samples, 0), dtype=paddle.float32)
+        samples = audio_segment.to('int16')
+        waveform = paddle.to_tensor(np.expand_dims(samples, 0), dtype=paddle.float32)
         if self._feature_method == 'spectrogram':
             # 计算声谱图
             feature = spectrogram(waveform=waveform,
                                   frame_length=self._frame_length,
                                   frame_shift=self._frame_shift,
                                   sr=audio_segment.sample_rate).numpy()
-        elif self._feature_method == 'melspectrogram':
+        elif self._feature_method == 'fbank':
             # 计算梅尔频谱
             feature = fbank(waveform=waveform,
                             n_mels=self._n_mels,
@@ -64,8 +63,9 @@ class AudioFeaturizer(object):
         else:
             raise Exception(f'预处理方法 {self._feature_method} 不存在！')
         # 归一化
-        feature = cmvn_floating_kaldi(feature, LC=150, RC=149, norm_vars=False).astype(np.float32)
-        feature = feature.T
+        mean = np.mean(feature, 0, keepdims=True)
+        std = np.std(feature, 0, keepdims=True)
+        feature = (feature - mean) / (std + 1e-5)
         return feature
 
     @property
@@ -75,8 +75,8 @@ class AudioFeaturizer(object):
         :return: 特征大小
         :rtype: int
         """
-        if self._feature_method == 'melspectrogram':
-            return 80
+        if self._feature_method == 'fbank':
+            return self._n_mels
         elif self._feature_method == 'spectrogram':
             return 257
         else:
