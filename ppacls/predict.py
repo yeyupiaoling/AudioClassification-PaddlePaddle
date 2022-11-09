@@ -91,18 +91,18 @@ class PPAClsPredictor:
         :param audios_data: 经过预处理的一批数据
         :return: 结果标签和对应的得分
         """
-        data_length = paddle.to_tensor([a.shape[1] for a in audios_data], dtype=paddle.int64)
+        data_length = paddle.to_tensor([a.shape[0] for a in audios_data], dtype=paddle.int64)
         # 找出音频长度最长的
-        batch = sorted(audios_data, key=lambda a: a.shape[1], reverse=True)
-        freq_size = batch[0].shape[0]
-        max_audio_length = batch[0].shape[1]
+        batch = sorted(audios_data, key=lambda a: a.shape[0], reverse=True)
+        freq_size = batch[0].shape[1]
+        max_audio_length = batch[0].shape[0]
         batch_size = len(batch)
         # 以最大的长度创建0张量
-        inputs = np.zeros((batch_size, freq_size, max_audio_length), dtype=np.float32)
+        inputs = np.zeros((batch_size, max_audio_length, freq_size), dtype=np.float32)
         for i, sample in enumerate(batch):
-            seq_length = sample.shape[1]
+            seq_length = sample.shape[0]
             # 将数据插入都0张量中，实现了padding
-            inputs[i, :, :seq_length] = sample[:, :]
+            inputs[i, :seq_length, :] = sample[:, :]
         audios_data = paddle.to_tensor(inputs, dtype=paddle.float32)
         # 执行预测
         output = self.predictor(audios_data, data_length)
