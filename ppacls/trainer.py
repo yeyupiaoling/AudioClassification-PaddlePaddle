@@ -78,7 +78,7 @@ class PPAClsTrainer(object):
                                           do_vad=self.configs.dataset_conf.chunk_duration,
                                           chunk_duration=self.configs.dataset_conf.chunk_duration,
                                           min_duration=self.configs.dataset_conf.min_duration,
-                                          mode='train')
+                                          mode='eval')
         self.test_loader = DataLoader(dataset=self.test_dataset,
                                       batch_size=self.configs.dataset_conf.batch_size,
                                       collate_fn=collate_fn,
@@ -128,7 +128,7 @@ class PPAClsTrainer(object):
 
     def __load_checkpoint(self, save_model_path, resume_model):
         last_epoch = -1
-        best_loss = 1e4
+        best_acc = 0
         last_model_dir = os.path.join(save_model_path,
                                       f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
                                       'last_model')
@@ -143,12 +143,12 @@ class PPAClsTrainer(object):
             with open(os.path.join(resume_model, 'model.state'), 'r', encoding='utf-8') as f:
                 json_data = json.load(f)
                 last_epoch = json_data['last_epoch'] - 1
-                best_loss = json_data['best_loss']
+                best_acc = json_data['accuracy']
             logger.info('成功恢复模型参数和优化方法参数：{}'.format(resume_model))
-        return last_epoch, best_loss
+        return last_epoch, best_acc
 
     # 保存模型
-    def __save_checkpoint(self, save_model_path, epoch_id, best_loss=1e4, best_model=False):
+    def __save_checkpoint(self, save_model_path, epoch_id, best_acc=0., best_model=False):
         if best_model:
             model_path = os.path.join(save_model_path,
                                       f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
@@ -165,7 +165,7 @@ class PPAClsTrainer(object):
             logger.error(f'保存模型时出现错误，错误信息：{e}')
             return
         with open(os.path.join(model_path, 'model.state'), 'w', encoding='utf-8') as f:
-            f.write('{"last_epoch": %d, "best_loss": %f}' % (epoch_id, best_loss))
+            f.write('{"last_epoch": %d, "accuracy": %f}' % (epoch_id, best_acc))
         if not best_model:
             last_model_path = os.path.join(save_model_path,
                                            f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
@@ -180,7 +180,7 @@ class PPAClsTrainer(object):
                 shutil.rmtree(old_model_path)
         logger.info('已保存模型：{}'.format(model_path))
 
-    def __train_epoch(self, epoch_id, save_model_path, local_rank, writer):
+    def __train_epoch(self, epoch_id, local_rank, writer):
         train_times, accuracies, loss_sum = [], [], []
         start = time.time()
         sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
@@ -215,9 +215,6 @@ class PPAClsTrainer(object):
                 writer.add_scalar('Train/Loss', sum(loss_sum) / len(loss_sum), self.train_step)
                 writer.add_scalar('Train/Accuracy', (sum(accuracies) / len(accuracies)), self.train_step)
                 train_times = []
-            # 固定步数也要保存一次模型
-            if batch_id % 10000 == 0 and batch_id != 0 and local_rank == 0:
-                self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id)
             self.scheduler.step()
             start = time.time()
 
@@ -260,7 +257,7 @@ class PPAClsTrainer(object):
 
         self.__load_pretrained(pretrained_model=pretrained_model)
         # 加载恢复模型
-        last_epoch, best_loss = self.__load_checkpoint(save_model_path=save_model_path, resume_model=resume_model)
+        last_epoch, best_acc = self.__load_checkpoint(save_model_path=save_model_path, resume_model=resume_model)
 
         test_step, self.train_step = 0, 0
         last_epoch += 1
@@ -271,8 +268,7 @@ class PPAClsTrainer(object):
             epoch_id += 1
             start_epoch = time.time()
             # 训练一个epoch
-            self.__train_epoch(epoch_id=epoch_id, save_model_path=save_model_path, local_rank=local_rank,
-                               writer=writer)
+            self.__train_epoch(epoch_id=epoch_id, local_rank=local_rank, writer=writer)
             # 多卡训练只使用一个进程执行评估和保存模型
             if local_rank == 0:
                 logger.info('=' * 70)
@@ -286,13 +282,13 @@ class PPAClsTrainer(object):
                 self.model.train()
                 # 记录学习率
                 writer.add_scalar('Train/lr', self.scheduler.get_lr(), epoch_id)
-                # # 保存最优模型
-                if loss <= best_loss:
-                    best_loss = loss
-                    self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_loss=loss,
+                # 保存最优模型
+                if acc >= best_acc:
+                    best_acc = acc
+                    self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=acc,
                                            best_model=True)
                 # 保存模型
-                self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_loss=loss)
+                self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=loss)
 
     def evaluate(self, resume_model='models/ecapa_tdnn_spectrogram/best_model/', save_matrix_path=None):
         """

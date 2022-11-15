@@ -24,9 +24,14 @@ class PPAClsPredictor:
         :param model_path: 导出的预测模型文件夹路径
         :param use_gpu: 是否使用GPU预测
         """
+        if use_gpu:
+            assert paddle.is_compiled_with_cuda(), 'GPU不可用'
+            paddle.device.set_device("gpu")
+        else:
+            os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+            paddle.device.set_device("cpu")
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
-        self.use_gpu = use_gpu
         self._audio_featurizer = AudioFeaturizer(**self.configs.preprocess_conf)
         # 创建模型
         if not os.path.exists(model_path):
@@ -34,8 +39,8 @@ class PPAClsPredictor:
         # 获取模型
         if self.configs.use_model == 'ecapa_tdnn':
             self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim,
-                              num_class=self.configs.dataset_conf.num_class,
-                              **self.configs.model_conf)
+                                       num_class=self.configs.dataset_conf.num_class,
+                                       **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # 加载模型
@@ -86,18 +91,18 @@ class PPAClsPredictor:
         :param audios_data: 经过预处理的一批数据
         :return: 结果标签和对应的得分
         """
-        data_length = paddle.to_tensor([a.shape[1] for a in audios_data], dtype=paddle.int64)
+        data_length = paddle.to_tensor([a.shape[0] for a in audios_data], dtype=paddle.int64)
         # 找出音频长度最长的
-        batch = sorted(audios_data, key=lambda a: a.shape[1], reverse=True)
-        freq_size = batch[0].shape[0]
-        max_audio_length = batch[0].shape[1]
+        batch = sorted(audios_data, key=lambda a: a.shape[0], reverse=True)
+        freq_size = batch[0].shape[1]
+        max_audio_length = batch[0].shape[0]
         batch_size = len(batch)
         # 以最大的长度创建0张量
-        inputs = np.zeros((batch_size, freq_size, max_audio_length), dtype=np.float32)
+        inputs = np.zeros((batch_size, max_audio_length, freq_size), dtype=np.float32)
         for i, sample in enumerate(batch):
-            seq_length = sample.shape[1]
+            seq_length = sample.shape[0]
             # 将数据插入都0张量中，实现了padding
-            inputs[i, :, :seq_length] = sample[:, :]
+            inputs[i, :seq_length, :] = sample[:, :]
         audios_data = paddle.to_tensor(inputs, dtype=paddle.float32)
         # 执行预测
         output = self.predictor(audios_data, data_length)
