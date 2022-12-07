@@ -1,7 +1,7 @@
 # 数据集参数
 dataset_conf:
   # 训练的批量大小
-  batch_size: 64
+  batch_size: 32
   # 分类大小
   num_class: 10
   # 读取数据的线程数量
@@ -46,15 +46,13 @@ optimizer_conf:
   weight_decay: 1e-6
 
 model_conf:
-  lin_neurons: 192
-  channels: [512, 512, 512, 512, 1536]
-  kernel_sizes: [5, 3, 3, 3, 1]
-  dilations: [1, 2, 3, 4, 1]
+  dropout: 0.1
+  extract_embedding: True
 
 train_conf:
   # 训练的轮数
   max_epoch: 30
   log_interval: 10
 
-# 所使用的模型
-use_model: 'ecapa_tdnn'
+# 所使用的模型，支持panns_cnn6、panns_cnn10、panns_cnn14
+use_model: 'panns_cnn10'

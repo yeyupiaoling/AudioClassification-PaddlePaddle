@@ -7,6 +7,7 @@ from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.audio import AudioSegment
 from ppacls.data_utils.featurizer.audio_featurizer import AudioFeaturizer
 from ppacls.models.ecapa_tdnn import EcapaTdnn
+from ppacls.models.panns import CNN6, CNN10, CNN14
 from ppacls.utils.logger import setup_logger
 from ppacls.utils.utils import dict_to_object
 
@@ -32,7 +33,7 @@ class PPAClsPredictor:
             paddle.device.set_device("cpu")
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
-        self._audio_featurizer = AudioFeaturizer(**self.configs.preprocess_conf)
+        self._audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
         # 创建模型
         if not os.path.exists(model_path):
             raise Exception("模型文件不存在，请检查{}是否存在！".format(model_path))
@@ -41,6 +42,18 @@ class PPAClsPredictor:
             self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim,
                                        num_class=self.configs.dataset_conf.num_class,
                                        **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn6':
+            self.model = CNN6(input_size=self._audio_featurizer.feature_dim,
+                              num_class=self.configs.dataset_conf.num_class,
+                              **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn10':
+            self.model = CNN10(input_size=self._audio_featurizer.feature_dim,
+                               num_class=self.configs.dataset_conf.num_class,
+                               **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn14':
+            self.model = CNN14(input_size=self._audio_featurizer.feature_dim,
+                               num_class=self.configs.dataset_conf.num_class,
+                               **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # 加载模型
