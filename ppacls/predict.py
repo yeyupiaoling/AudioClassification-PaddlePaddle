@@ -5,7 +5,7 @@ import paddle
 
 from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.audio import AudioSegment
-from ppacls.data_utils.featurizer.audio_featurizer import AudioFeaturizer
+from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.models.ecapa_tdnn import EcapaTdnn
 from ppacls.models.panns import CNN6, CNN10, CNN14
 from ppacls.utils.logger import setup_logger
@@ -67,6 +67,8 @@ class PPAClsPredictor:
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
+        # 获取特征器
+        self.audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
 
     # 预测一个音频的特征
     def predict(self,
@@ -87,11 +89,11 @@ class PPAClsPredictor:
             input_data = AudioSegment.from_wave_bytes(audio_data)
         else:
             raise Exception(f'不支持该数据类型，当前数据类型为：{type(audio_data)}')
-        audio_feature = self._audio_featurizer.featurize(input_data)
-        input_data = paddle.to_tensor(audio_feature, dtype=paddle.float32).unsqueeze(0)
-        data_length = paddle.to_tensor([input_data.shape[1]], dtype=paddle.int64)
+        input_data = paddle.to_tensor(input_data.samples, dtype=paddle.float32).unsqueeze(0)
+        audio_feature = self._audio_featurizer(input_data)
+        data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
         # 执行预测
-        output = self.predictor(input_data, data_length)
+        output = self.predictor(audio_feature, data_length)
         result = paddle.nn.functional.softmax(output).numpy()[0]
         # 最大概率的label
         lab = np.argsort(result)[-1]
