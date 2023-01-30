@@ -374,6 +374,7 @@ class EcapaTdnn(nn.Layer):
         super().__init__()
         assert len(channels) == len(kernel_sizes)
         assert len(channels) == len(dilations)
+        self.input_size = input_size
         self.channels = channels
         self.blocks = nn.LayerList()
         self.emb_size = lin_neurons
@@ -454,3 +455,12 @@ class EcapaTdnn(nn.Layer):
         x = self.fc(x).squeeze(-1)  # (N, emb_size, 1) -> (N, emb_size)
         x = self.output(x)
         return x
+
+    def export(self):
+        static_model = paddle.jit.to_static(
+            self,
+            input_spec=[paddle.static.InputSpec(shape=[None, None, self.input_size],
+                                                dtype=paddle.float32),  # [batch, times, dimension]
+                        paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
+                        ])
+        return static_model
