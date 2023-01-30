@@ -14,14 +14,14 @@
 
  - Anaconda 3
  - Python 3.8
- - PaddlePaddle 2.3.2
+ - PaddlePaddle 2.4.0
  - Windows 10 or Ubuntu 18.04
 
 ## 安装环境
 
  - 首先安装的是PaddlePaddle的GPU版本，如果已经安装过了，请跳过。
 ```shell
-conda install paddlepaddle-gpu==2.3.2 cudatoolkit=10.2 --channel https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/Paddle/
+conda install paddlepaddle-gpu==2.4.0 cudatoolkit=10.2 --channel https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/Paddle/
 ```
 
  - 安装ppacls库。

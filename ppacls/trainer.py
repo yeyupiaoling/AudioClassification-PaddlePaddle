@@ -14,10 +14,10 @@ from tqdm import tqdm
 from visualdl import LogWriter
 
 from ppacls import SUPPORT_MODEL
-from ppacls.data_utils.collate_fn import collate_fn
-from ppacls.data_utils.featurizer.audio_featurizer import AudioFeaturizer
+from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
 from ppacls.models.ecapa_tdnn import EcapaTdnn
+from ppacls.models.panns import CNN6, CNN10, CNN14
 from ppacls.utils.logger import setup_logger
 from ppacls.utils.lr import cosine_decay_with_warmup
 from ppacls.utils.utils import dict_to_object, plot_confusion_matrix
@@ -47,6 +47,8 @@ class PPAClsTrainer(object):
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
+        # 获取特征器
+        self.audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
 
     def __setup_dataloader(self, augment_conf_path=None, is_train=False):
         # 获取训练数据
@@ -57,31 +59,33 @@ class PPAClsTrainer(object):
                 logger.info('数据增强配置文件{}不存在'.format(augment_conf_path))
             augmentation_config = '{}'
         if is_train:
-            self.train_dataset = CustomDataset(preprocess_configs=self.configs.preprocess_conf,
-                                               data_list_path=self.configs.dataset_conf.train_list,
-                                               do_vad=self.configs.dataset_conf.chunk_duration,
+            self.train_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.train_list,
+                                               do_vad=self.configs.dataset_conf.do_vad,
                                                chunk_duration=self.configs.dataset_conf.chunk_duration,
                                                min_duration=self.configs.dataset_conf.min_duration,
                                                augmentation_config=augmentation_config,
+                                               sample_rate=self.configs.dataset_conf.sample_rate,
+                                               use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
+                                               target_dB=self.configs.dataset_conf.target_dB,
                                                mode='train')
             # 设置支持多卡训练
             self.train_batch_sampler = paddle.io.DistributedBatchSampler(dataset=self.train_dataset,
                                                                          batch_size=self.configs.dataset_conf.batch_size,
                                                                          shuffle=True)
             self.train_loader = DataLoader(dataset=self.train_dataset,
-                                           collate_fn=collate_fn,
                                            batch_sampler=self.train_batch_sampler,
                                            num_workers=self.configs.dataset_conf.num_workers)
         # 获取测试数据
-        self.test_dataset = CustomDataset(preprocess_configs=self.configs.preprocess_conf,
-                                          data_list_path=self.configs.dataset_conf.test_list,
-                                          do_vad=self.configs.dataset_conf.chunk_duration,
+        self.test_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.test_list,
+                                          do_vad=self.configs.dataset_conf.do_vad,
                                           chunk_duration=self.configs.dataset_conf.chunk_duration,
                                           min_duration=self.configs.dataset_conf.min_duration,
+                                          sample_rate=self.configs.dataset_conf.sample_rate,
+                                          use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
+                                          target_dB=self.configs.dataset_conf.target_dB,
                                           mode='eval')
         self.test_loader = DataLoader(dataset=self.test_dataset,
                                       batch_size=self.configs.dataset_conf.batch_size,
-                                      collate_fn=collate_fn,
                                       num_workers=self.configs.dataset_conf.num_workers)
 
     def __setup_model(self, input_size, is_train=False):
@@ -90,6 +94,18 @@ class PPAClsTrainer(object):
             self.model = EcapaTdnn(input_size=input_size,
                                    num_class=self.configs.dataset_conf.num_class,
                                    **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn6':
+            self.model = CNN6(input_size=input_size,
+                              num_class=self.configs.dataset_conf.num_class,
+                              **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn10':
+            self.model = CNN10(input_size=input_size,
+                               num_class=self.configs.dataset_conf.num_class,
+                               **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn14':
+            self.model = CNN14(input_size=input_size,
+                               num_class=self.configs.dataset_conf.num_class,
+                               **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # print(self.model)
@@ -184,8 +200,11 @@ class PPAClsTrainer(object):
         train_times, accuracies, loss_sum = [], [], []
         start = time.time()
         sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
-        for batch_id, (audio, label, audio_lens) in enumerate(self.train_loader()):
-            output = self.model(audio, audio_lens)
+        for batch_id, (audio, label) in enumerate(self.train_loader()):
+            features = self.audio_featurizer(audio)
+            audio_lens = [features.shape[1] for _ in range(audio.shape[0])]
+            audio_lens = paddle.to_tensor(audio_lens, dtype=paddle.int64)
+            output = self.model(features, audio_lens)
             # 计算损失值
             los = self.loss(output, label)
             los.backward()
@@ -247,7 +266,7 @@ class PPAClsTrainer(object):
         # 获取数据
         self.__setup_dataloader(augment_conf_path=augment_conf_path, is_train=True)
         # 获取模型
-        self.__setup_model(input_size=self.test_dataset.feature_dim, is_train=True)
+        self.__setup_model(input_size=self.audio_featurizer.feature_dim, is_train=True)
 
         # 支持多卡训练
         if nranks > 1 and self.use_gpu:
@@ -300,7 +319,7 @@ class PPAClsTrainer(object):
         if self.test_loader is None:
             self.__setup_dataloader()
         if self.model is None:
-            self.__setup_model(input_size=self.test_dataset.feature_dim)
+            self.__setup_model(input_size=self.audio_featurizer.feature_dim)
         if resume_model is not None:
             if os.path.isdir(resume_model):
                 resume_model = os.path.join(resume_model, 'model.pdparams')
@@ -316,8 +335,11 @@ class PPAClsTrainer(object):
 
         accuracies, losses, preds, labels = [], [], [], []
         with paddle.no_grad():
-            for batch_id, (audio, label, audio_lens) in enumerate(tqdm(self.test_loader())):
-                output = eval_model(audio, audio_lens)
+            for batch_id, (audio, label) in enumerate(tqdm(self.test_loader())):
+                features = self.audio_featurizer(audio)
+                audio_lens = [features.shape[1] for _ in range(audio.shape[0])]
+                audio_lens = paddle.to_tensor(audio_lens, dtype=paddle.int64)
+                output = eval_model(features, audio_lens)
                 los = self.loss(output, label)
                 # 计算准确率
                 label = paddle.reshape(label, shape=(-1, 1))
@@ -348,8 +370,7 @@ class PPAClsTrainer(object):
         :return:
         """
         # 获取模型
-        audio_featurizer = AudioFeaturizer(**self.configs.preprocess_conf)
-        self.__setup_model(input_size=audio_featurizer.feature_dim)
+        self.__setup_model(input_size=self.audio_featurizer.feature_dim)
         # 加载预训练模型
         if os.path.isdir(resume_model):
             resume_model = os.path.join(resume_model, 'model.pdparams')

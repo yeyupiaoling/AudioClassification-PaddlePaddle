@@ -5,8 +5,9 @@ import paddle
 
 from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.audio import AudioSegment
-from ppacls.data_utils.featurizer.audio_featurizer import AudioFeaturizer
+from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.models.ecapa_tdnn import EcapaTdnn
+from ppacls.models.panns import CNN6, CNN10, CNN14
 from ppacls.utils.logger import setup_logger
 from ppacls.utils.utils import dict_to_object
 
@@ -32,7 +33,7 @@ class PPAClsPredictor:
             paddle.device.set_device("cpu")
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
-        self._audio_featurizer = AudioFeaturizer(**self.configs.preprocess_conf)
+        self._audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
         # 创建模型
         if not os.path.exists(model_path):
             raise Exception("模型文件不存在，请检查{}是否存在！".format(model_path))
@@ -41,6 +42,18 @@ class PPAClsPredictor:
             self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim,
                                        num_class=self.configs.dataset_conf.num_class,
                                        **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn6':
+            self.predictor = CNN6(input_size=self._audio_featurizer.feature_dim,
+                                  num_class=self.configs.dataset_conf.num_class,
+                                  **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn10':
+            self.predictor = CNN10(input_size=self._audio_featurizer.feature_dim,
+                                   num_class=self.configs.dataset_conf.num_class,
+                                   **self.configs.model_conf)
+        elif self.configs.use_model == 'panns_cnn14':
+            self.predictor = CNN14(input_size=self._audio_featurizer.feature_dim,
+                                   num_class=self.configs.dataset_conf.num_class,
+                                   **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # 加载模型
@@ -54,6 +67,8 @@ class PPAClsPredictor:
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
+        # 获取特征器
+        self.audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
 
     # 预测一个音频的特征
     def predict(self,
@@ -74,11 +89,25 @@ class PPAClsPredictor:
             input_data = AudioSegment.from_wave_bytes(audio_data)
         else:
             raise Exception(f'不支持该数据类型，当前数据类型为：{type(audio_data)}')
-        audio_feature = self._audio_featurizer.featurize(input_data)
-        input_data = paddle.to_tensor(audio_feature, dtype=paddle.float32).unsqueeze(0)
-        data_length = paddle.to_tensor([input_data.shape[1]], dtype=paddle.int64)
+        # 重采样
+        if input_data.sample_rate != self.configs.dataset_conf.sample_rate:
+            input_data.resample(self.configs.dataset_conf.sample_rate)
+        # decibel normalization
+        if self.configs.dataset_conf.use_dB_normalization:
+            input_data.normalize(target_db=self.configs.dataset_conf.target_dB)
+        if 'panns' in self.configs.use_model:
+            # 对小于训练长度的复制补充
+            num_chunk_samples = int(self.configs.dataset_conf.chunk_duration * input_data.sample_rate)
+            if input_data.num_samples < num_chunk_samples:
+                shortage = num_chunk_samples - input_data.num_samples
+                input_data.pad_silence(duration=float(shortage / input_data.sample_rate * 1.1), sides='end')
+            # 裁剪需要的数据
+            input_data.crop(duration=self.configs.dataset_conf.chunk_duration)
+        input_data = paddle.to_tensor(input_data.samples, dtype=paddle.float32).unsqueeze(0)
+        audio_feature = self._audio_featurizer(input_data)
+        data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
         # 执行预测
-        output = self.predictor(input_data, data_length)
+        output = self.predictor(audio_feature, data_length)
         result = paddle.nn.functional.softmax(output).numpy()[0]
         # 最大概率的label
         lab = np.argsort(result)[-1]
