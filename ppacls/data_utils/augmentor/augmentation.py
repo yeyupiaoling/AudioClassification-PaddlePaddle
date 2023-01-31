@@ -60,23 +60,6 @@ class AugmentationPipeline(object):
           "max_gain_dBFS": 15
         },
         "prob": 1.0
-      },
-      {
-        "type": "specaug",
-        "params": {
-          "W": 0,
-          "warp_mode": "PIL",
-          "F": 10,
-          "n_freq_masks": 2,
-          "T": 50,
-          "n_time_masks": 2,
-          "p": 1.0,
-          "adaptive_number_ratio": 0,
-          "adaptive_size_ratio": 0,
-          "max_n_time_masks": 20,
-          "replace_with_zero": true
-        },
-        "prob": 1.0
       }
     ]
     This augmentation configuration inserts two augmentation models
