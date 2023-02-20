@@ -6,6 +6,7 @@ import time
 from datetime import timedelta
 
 import paddle
+import yaml
 from paddle.distributed import fleet
 from paddle.io import DataLoader
 from paddle.metric import accuracy
@@ -20,7 +21,7 @@ from ppacls.models.ecapa_tdnn import EcapaTdnn
 from ppacls.models.panns import CNN6, CNN10, CNN14
 from ppacls.utils.logger import setup_logger
 from ppacls.utils.lr import cosine_decay_with_warmup
-from ppacls.utils.utils import dict_to_object, plot_confusion_matrix
+from ppacls.utils.utils import dict_to_object, plot_confusion_matrix, print_arguments
 
 logger = setup_logger(__name__)
 
@@ -39,6 +40,11 @@ class PPAClsTrainer(object):
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
             paddle.device.set_device("cpu")
         self.use_gpu = use_gpu
+        # 读取配置文件
+        if isinstance(configs, str):
+            with open(configs, 'r', encoding='utf-8') as f:
+                configs = yaml.load(f.read(), Loader=yaml.FullLoader)
+            print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
         self.model = None

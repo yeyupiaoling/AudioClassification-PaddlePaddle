@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 import paddle
+import yaml
 
 from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.audio import AudioSegment
@@ -9,7 +10,7 @@ from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.models.ecapa_tdnn import EcapaTdnn
 from ppacls.models.panns import CNN6, CNN10, CNN14
 from ppacls.utils.logger import setup_logger
-from ppacls.utils.utils import dict_to_object
+from ppacls.utils.utils import dict_to_object, print_arguments
 
 logger = setup_logger(__name__)
 
@@ -31,6 +32,11 @@ class PPAClsPredictor:
         else:
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
             paddle.device.set_device("cpu")
+        # 读取配置文件
+        if isinstance(configs, str):
+            with open(configs, 'r', encoding='utf-8') as f:
+                configs = yaml.load(f.read(), Loader=yaml.FullLoader)
+            print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
         self._audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
