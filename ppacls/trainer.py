@@ -18,7 +18,10 @@ from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
 from ppacls.models.ecapa_tdnn import EcapaTdnn
-from ppacls.models.panns import CNN6, CNN10, CNN14
+from ppacls.models.panns import PANNS_CNN6, PANNS_CNN10, PANNS_CNN14
+from ppacls.models.res2net import Res2Net
+from ppacls.models.resnet_se import ResNetSE
+from ppacls.models.tdnn import TDNN
 from ppacls.utils.logger import setup_logger
 from ppacls.utils.lr import cosine_decay_with_warmup
 from ppacls.utils.utils import dict_to_object, plot_confusion_matrix, print_arguments
@@ -96,22 +99,34 @@ class PPAClsTrainer(object):
 
     def __setup_model(self, input_size, is_train=False):
         # 获取模型
-        if self.configs.use_model == 'ecapa_tdnn':
+        if self.configs.use_model == 'EcapaTdnn':
             self.model = EcapaTdnn(input_size=input_size,
                                    num_class=self.configs.dataset_conf.num_class,
                                    **self.configs.model_conf)
-        elif self.configs.use_model == 'panns_cnn6':
-            self.model = CNN6(input_size=input_size,
+        elif self.configs.use_model == 'PANNS_CNN6':
+            self.model = PANNS_CNN6(input_size=input_size,
+                                    num_class=self.configs.dataset_conf.num_class,
+                                    **self.configs.model_conf)
+        elif self.configs.use_model == 'PANNS_CNN10':
+            self.model = PANNS_CNN10(input_size=input_size,
+                                     num_class=self.configs.dataset_conf.num_class,
+                                     **self.configs.model_conf)
+        elif self.configs.use_model == 'PANNS_CNN14':
+            self.model = PANNS_CNN14(input_size=input_size,
+                                     num_class=self.configs.dataset_conf.num_class,
+                                     **self.configs.model_conf)
+        elif self.configs.use_model == 'Res2Net':
+            self.model = Res2Net(input_size=input_size,
+                                 num_class=self.configs.dataset_conf.num_class,
+                                 **self.configs.model_conf)
+        elif self.configs.use_model == 'ResNetSE':
+            self.model = ResNetSE(input_size=input_size,
+                                  num_class=self.configs.dataset_conf.num_class,
+                                  **self.configs.model_conf)
+        elif self.configs.use_model == 'TDNN':
+            self.model = TDNN(input_size=input_size,
                               num_class=self.configs.dataset_conf.num_class,
                               **self.configs.model_conf)
-        elif self.configs.use_model == 'panns_cnn10':
-            self.model = CNN10(input_size=input_size,
-                               num_class=self.configs.dataset_conf.num_class,
-                               **self.configs.model_conf)
-        elif self.configs.use_model == 'panns_cnn14':
-            self.model = CNN14(input_size=input_size,
-                               num_class=self.configs.dataset_conf.num_class,
-                               **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # print(self.model)
