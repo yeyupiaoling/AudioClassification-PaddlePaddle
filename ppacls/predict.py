@@ -1,4 +1,5 @@
 import os
+from io import BufferedReader
 
 import numpy as np
 import paddle
@@ -42,37 +43,37 @@ class PPAClsPredictor:
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
-        self.audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
+        self._audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
         # 创建模型
         if not os.path.exists(model_path):
             raise Exception("模型文件不存在，请检查{}是否存在！".format(model_path))
         # 获取模型
         if self.configs.use_model == 'EcapaTdnn':
-            self.predictor = EcapaTdnn(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim,
                                        num_class=self.configs.dataset_conf.num_class,
                                        **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN6':
-            self.predictor = PANNS_CNN6(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = PANNS_CNN6(input_size=self._audio_featurizer.feature_dim,
                                         num_class=self.configs.dataset_conf.num_class,
                                         **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN10':
-            self.predictor = PANNS_CNN10(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = PANNS_CNN10(input_size=self._audio_featurizer.feature_dim,
                                          num_class=self.configs.dataset_conf.num_class,
                                          **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN14':
-            self.predictor = PANNS_CNN14(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = PANNS_CNN14(input_size=self._audio_featurizer.feature_dim,
                                          num_class=self.configs.dataset_conf.num_class,
                                          **self.configs.model_conf)
         elif self.configs.use_model == 'Res2Net':
-            self.predictor = Res2Net(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = Res2Net(input_size=self._audio_featurizer.feature_dim,
                                      num_class=self.configs.dataset_conf.num_class,
                                      **self.configs.model_conf)
         elif self.configs.use_model == 'ResNetSE':
-            self.predictor = ResNetSE(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = ResNetSE(input_size=self._audio_featurizer.feature_dim,
                                       num_class=self.configs.dataset_conf.num_class,
                                       **self.configs.model_conf)
         elif self.configs.use_model == 'TDNN':
-            self.predictor = TDNN(input_size=self.audio_featurizer.feature_dim,
+            self.predictor = TDNN(input_size=self._audio_featurizer.feature_dim,
                                   num_class=self.configs.dataset_conf.num_class,
                                   **self.configs.model_conf)
         else:
@@ -88,8 +89,31 @@ class PPAClsPredictor:
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
-        # 获取特征器
-        self.audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
+
+    def _load_audio(self, audio_data, sample_rate=16000):
+        """加载音频
+        :param audio_data: 需要识别的数据，支持文件路径，文件对象，字节，numpy。如果是字节的话，必须是完整的字节文件
+        :param sample_rate: 如果传入的事numpy数据，需要指定采样率
+        :return: 识别的文本结果和解码的得分数
+        """
+        # 加载音频文件，并进行预处理
+        if isinstance(audio_data, str):
+            audio_segment = AudioSegment.from_file(audio_data)
+        elif isinstance(audio_data, BufferedReader):
+            audio_segment = AudioSegment.from_file(audio_data)
+        elif isinstance(audio_data, np.ndarray):
+            audio_segment = AudioSegment.from_ndarray(audio_data, sample_rate)
+        elif isinstance(audio_data, bytes):
+            audio_segment = AudioSegment.from_bytes(audio_data)
+        else:
+            raise Exception(f'不支持该数据类型，当前数据类型为：{type(audio_data)}')
+        # 重采样
+        if audio_segment.sample_rate != self.configs.dataset_conf.sample_rate:
+            audio_segment.resample(self.configs.dataset_conf.sample_rate)
+        # decibel normalization
+        if self.configs.dataset_conf.use_dB_normalization:
+            audio_segment.normalize(target_db=self.configs.dataset_conf.target_dB)
+        return audio_segment
 
     # 预测一个音频的特征
     def predict(self,
@@ -97,26 +121,13 @@ class PPAClsPredictor:
                 sample_rate=16000):
         """预测一个音频
 
-        :param audio_data: 需要识别的数据，支持文件路径，字节，numpy
+        :param audio_data: 需要识别的数据，支持文件路径，文件对象，字节，numpy。如果是字节的话，必须是完整并带格式的字节文件
         :param sample_rate: 如果传入的事numpy数据，需要指定采样率
         :return: 结果标签和对应的得分
         """
         # 加载音频文件，并进行预处理
-        if isinstance(audio_data, str):
-            input_data = AudioSegment.from_file(audio_data)
-        elif isinstance(audio_data, np.ndarray):
-            input_data = AudioSegment.from_ndarray(audio_data, sample_rate)
-        elif isinstance(audio_data, bytes):
-            input_data = AudioSegment.from_wave_bytes(audio_data)
-        else:
-            raise Exception(f'不支持该数据类型，当前数据类型为：{type(audio_data)}')
-        # 重采样
-        if input_data.sample_rate != self.configs.dataset_conf.sample_rate:
-            input_data.resample(self.configs.dataset_conf.sample_rate)
-        # decibel normalization
-        if self.configs.dataset_conf.use_dB_normalization:
-            input_data.normalize(target_db=self.configs.dataset_conf.target_dB)
-        if 'panns' in self.configs.use_model:
+        input_data = self._load_audio(audio_data=audio_data, sample_rate=sample_rate)
+        if 'PANNS' in self.configs.use_model:
             # 对小于训练长度的复制补充
             num_chunk_samples = int(self.configs.dataset_conf.chunk_duration * input_data.sample_rate)
             if input_data.num_samples < num_chunk_samples:
@@ -125,7 +136,7 @@ class PPAClsPredictor:
             # 裁剪需要的数据
             input_data.crop(duration=self.configs.dataset_conf.chunk_duration)
         input_data = paddle.to_tensor(input_data.samples, dtype=paddle.float32).unsqueeze(0)
-        audio_feature = self.audio_featurizer(input_data)
+        audio_feature = self._audio_featurizer(input_data)
         data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
         # 执行预测
         output = self.predictor(audio_feature, data_length)
@@ -135,27 +146,38 @@ class PPAClsPredictor:
         score = result[lab]
         return self.class_labels[lab], round(float(score), 5)
 
-    def predict_batch(self, audios_data):
-        """预测一批音频
+    def predict_batch(self, audios_data, sample_rate=16000):
+        """预测一批音频的特征
 
-        :param audios_data: 经过预处理的一批数据
+        :param audios_data: 需要预测音频的路径
+        :param sample_rate: 如果传入的事numpy数据，需要指定采样率
         :return: 结果标签和对应的得分
         """
-        data_length = paddle.to_tensor([a.shape[0] for a in audios_data], dtype=paddle.int64)
+        audios_data1, data_length = [], []
+        for audio_data in audios_data:
+            # 加载音频文件，并进行预处理
+            input_data = self._load_audio(audio_data=audio_data, sample_rate=sample_rate)
+            audios_data1.append(input_data.samples)
+            data_length.append(input_data.num_samples)
         # 找出音频长度最长的
-        batch = sorted(audios_data, key=lambda a: a.shape[0], reverse=True)
-        freq_size = batch[0].shape[1]
+        batch = sorted(audios_data1, key=lambda a: a.shape[0], reverse=True)
         max_audio_length = batch[0].shape[0]
         batch_size = len(batch)
         # 以最大的长度创建0张量
-        inputs = np.zeros((batch_size, max_audio_length, freq_size), dtype=np.float32)
-        for i, sample in enumerate(batch):
-            seq_length = sample.shape[0]
+        inputs = np.zeros((batch_size, max_audio_length), dtype='float32')
+        input_lens_ratio = []
+        for x in range(batch_size):
+            tensor = batch[x]
+            seq_length = tensor.shape[0]
             # 将数据插入都0张量中，实现了padding
-            inputs[i, :seq_length, :] = sample[:, :]
-        audios_data = paddle.to_tensor(inputs, dtype=paddle.float32)
+            inputs[x, :seq_length] = tensor[:]
+            input_lens_ratio.append(seq_length / max_audio_length)
+        input_lens_ratio = paddle.to_tensor(input_lens_ratio, dtype=paddle.float32)
+        inputs = paddle.to_tensor(inputs, dtype=paddle.float32)
+        audio_feature = self._audio_featurizer(inputs)
+        data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
         # 执行预测
-        output = self.predictor(audios_data, data_length)
+        output = self.predictor(audio_feature, data_length)
         results = paddle.nn.functional.softmax(output).numpy()
         labels, scores = [], []
         for result in results:
