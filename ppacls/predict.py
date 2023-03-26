@@ -127,19 +127,13 @@ class PPAClsPredictor:
         """
         # 加载音频文件，并进行预处理
         input_data = self._load_audio(audio_data=audio_data, sample_rate=sample_rate)
-        if 'PANNS' in self.configs.use_model:
-            # 对小于训练长度的复制补充
-            num_chunk_samples = int(self.configs.dataset_conf.chunk_duration * input_data.sample_rate)
-            if input_data.num_samples < num_chunk_samples:
-                shortage = num_chunk_samples - input_data.num_samples
-                input_data.pad_silence(duration=float(shortage / input_data.sample_rate * 1.1), sides='end')
-            # 裁剪需要的数据
-            input_data.crop(duration=self.configs.dataset_conf.chunk_duration)
+        assert input_data.duration >= self.configs.dataset_conf.min_duration, \
+            f'音频太短，最小应该为{self.configs.dataset_conf.min_duration}s，当前音频为{input_data.duration}s'
         input_data = paddle.to_tensor(input_data.samples, dtype=paddle.float32).unsqueeze(0)
-        audio_feature = self._audio_featurizer(input_data)
-        data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
+        input_len_ratio = paddle.to_tensor([1], dtype=paddle.float32)
+        audio_feature, _ = self._audio_featurizer(input_data, input_len_ratio)
         # 执行预测
-        output = self.predictor(audio_feature, data_length)
+        output = self.predictor(audio_feature, input_len_ratio)
         result = paddle.nn.functional.softmax(output).numpy()[0]
         # 最大概率的label
         lab = np.argsort(result)[-1]

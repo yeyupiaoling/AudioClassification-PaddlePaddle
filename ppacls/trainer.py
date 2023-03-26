@@ -15,6 +15,7 @@ from tqdm import tqdm
 from visualdl import LogWriter
 
 from ppacls import SUPPORT_MODEL
+from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
 from ppacls.models.ecapa_tdnn import EcapaTdnn
@@ -70,7 +71,7 @@ class PPAClsTrainer(object):
         if is_train:
             self.train_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.train_list,
                                                do_vad=self.configs.dataset_conf.do_vad,
-                                               chunk_duration=self.configs.dataset_conf.chunk_duration,
+                                               max_duration=self.configs.dataset_conf.max_duration,
                                                min_duration=self.configs.dataset_conf.min_duration,
                                                augmentation_config=augmentation_config,
                                                sample_rate=self.configs.dataset_conf.sample_rate,
@@ -82,12 +83,13 @@ class PPAClsTrainer(object):
                                                                          batch_size=self.configs.dataset_conf.batch_size,
                                                                          shuffle=True)
             self.train_loader = DataLoader(dataset=self.train_dataset,
+                                           collate_fn=collate_fn,
                                            batch_sampler=self.train_batch_sampler,
                                            num_workers=self.configs.dataset_conf.num_workers)
         # 获取测试数据
         self.test_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.test_list,
                                           do_vad=self.configs.dataset_conf.do_vad,
-                                          chunk_duration=self.configs.dataset_conf.chunk_duration,
+                                          max_duration=self.configs.dataset_conf.max_duration,
                                           min_duration=self.configs.dataset_conf.min_duration,
                                           sample_rate=self.configs.dataset_conf.sample_rate,
                                           use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
@@ -95,6 +97,7 @@ class PPAClsTrainer(object):
                                           mode='eval')
         self.test_loader = DataLoader(dataset=self.test_dataset,
                                       batch_size=self.configs.dataset_conf.batch_size,
+                                      collate_fn=collate_fn,
                                       num_workers=self.configs.dataset_conf.num_workers)
 
     def __setup_model(self, input_size, is_train=False):
@@ -234,11 +237,9 @@ class PPAClsTrainer(object):
         train_times, accuracies, loss_sum = [], [], []
         start = time.time()
         sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
-        for batch_id, (audio, label) in enumerate(self.train_loader()):
-            features = self.audio_featurizer(audio)
-            audio_lens = [features.shape[1] for _ in range(audio.shape[0])]
-            audio_lens = paddle.to_tensor(audio_lens, dtype=paddle.int64)
-            output = self.model(features, audio_lens)
+        for batch_id, (audio, label, input_lens_ratio) in enumerate(self.train_loader()):
+            features, _ = self.audio_featurizer(audio, input_lens_ratio)
+            output = self.model(features, input_lens_ratio)
             # 计算损失值
             los = self.loss(output, label)
             los.backward()
@@ -370,11 +371,9 @@ class PPAClsTrainer(object):
 
         accuracies, losses, preds, labels = [], [], [], []
         with paddle.no_grad():
-            for batch_id, (audio, label) in enumerate(tqdm(self.test_loader())):
-                features = self.audio_featurizer(audio)
-                audio_lens = [features.shape[1] for _ in range(audio.shape[0])]
-                audio_lens = paddle.to_tensor(audio_lens, dtype=paddle.int64)
-                output = eval_model(features, audio_lens)
+            for batch_id, (audio, label, input_lens_ratio) in enumerate(tqdm(self.test_loader())):
+                features, _ = self.audio_featurizer(audio, input_lens_ratio)
+                output = self.model(features, input_lens_ratio)
                 los = self.loss(output, label)
                 # 计算准确率
                 label = paddle.reshape(label, shape=(-1, 1))

@@ -6,10 +6,10 @@ from paddle.audio.features import LogMelSpectrogram, MelSpectrogram, Spectrogram
 class AudioFeaturizer(nn.Layer):
     """音频特征器
 
+    :param feature_method: 所使用的预处理方法
+    :type feature_method: str
     :param feature_conf: 预处理方法的参数
     :type feature_conf: dict
-    :param sample_rate: 用于训练的音频的采样率
-    :type sample_rate: int
     """
 
     def __init__(self, feature_method='MelSpectrogram', feature_conf={}):
@@ -27,11 +27,13 @@ class AudioFeaturizer(nn.Layer):
         else:
             raise Exception(f'预处理方法 {self._feature_method} 不存在!')
 
-    def forward(self, waveforms):
+    def forward(self, waveforms, input_lens_ratio):
         """从AudioSegment中提取音频特征
 
         :param waveforms: Audio segment to extract features from.
         :type waveforms: AudioSegment
+        :param input_lens_ratio: input length ratio
+        :type input_lens_ratio: tensor
         :return: Spectrogram audio feature in 2darray.
         :rtype: ndarray
         """
@@ -41,7 +43,17 @@ class AudioFeaturizer(nn.Layer):
         mean = paddle.mean(feature, 1, keepdim=True)
         std = paddle.std(feature, 1, keepdim=True)
         feature = (feature - mean) / (std + 1e-5)
-        return feature
+        # 对掩码比例进行扩展
+        input_lens = (input_lens_ratio * feature.shape[1]).astype(paddle.int32)
+        mask_lens = input_lens.unsqueeze(1)
+        # 生成掩码张量
+        idxs = paddle.arange(feature.shape[1])
+        idxs = idxs.tile([feature.shape[0], 1])
+        mask = idxs < mask_lens
+        mask = mask.unsqueeze(-1)
+        # 对特征进行掩码操作
+        feature_masked = paddle.where(mask, feature, paddle.zeros_like(feature))
+        return feature_masked, input_lens
 
     @property
     def feature_dim(self):
