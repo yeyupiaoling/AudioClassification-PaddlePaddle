@@ -1,6 +1,8 @@
 from setuptools import setup, find_packages
 
-VERSION = "0.3.3"
+import ppacls
+
+VERSION = ppacls.__version__
 
 
 def readme():

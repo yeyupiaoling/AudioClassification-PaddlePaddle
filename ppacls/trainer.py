@@ -14,7 +14,7 @@ from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from visualdl import LogWriter
 
-from ppacls import SUPPORT_MODEL
+from ppacls import SUPPORT_MODEL, __version__
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
@@ -218,7 +218,8 @@ class PPAClsTrainer(object):
             logger.error(f'保存模型时出现错误，错误信息：{e}')
             return
         with open(os.path.join(model_path, 'model.state'), 'w', encoding='utf-8') as f:
-            f.write('{"last_epoch": %d, "accuracy": %f}' % (epoch_id, best_acc))
+            data = {"last_epoch": epoch_id, "accuracy": best_acc, "version": __version__}
+            f.write(json.dumps(data))
         if not best_model:
             last_model_path = os.path.join(save_model_path,
                                            f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
