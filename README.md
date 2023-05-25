@@ -178,3 +178,10 @@ python record_audio.py
 ```shell
 python infer_record.py --record_seconds=3
 ```
+
+## 打赏作者
+
+<br/>
+<div align="center">
+<img src="https://yeyupiaoling.cn/reward.png" alt="打赏作者" width="400">
+</div>
