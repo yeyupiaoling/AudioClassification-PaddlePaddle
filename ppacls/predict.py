@@ -43,39 +43,26 @@ class PPAClsPredictor:
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
-        self._audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
+        self._audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
+                                                method_args=self.configs.preprocess_conf.get('method_args', {}))
         # 创建模型
         if not os.path.exists(model_path):
             raise Exception("模型文件不存在，请检查{}是否存在！".format(model_path))
         # 获取模型
         if self.configs.use_model == 'EcapaTdnn':
-            self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim,
-                                       num_class=self.configs.dataset_conf.num_class,
-                                       **self.configs.model_conf)
+            self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN6':
-            self.predictor = PANNS_CNN6(input_size=self._audio_featurizer.feature_dim,
-                                        num_class=self.configs.dataset_conf.num_class,
-                                        **self.configs.model_conf)
+            self.predictor = PANNS_CNN6(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN10':
-            self.predictor = PANNS_CNN10(input_size=self._audio_featurizer.feature_dim,
-                                         num_class=self.configs.dataset_conf.num_class,
-                                         **self.configs.model_conf)
+            self.predictor = PANNS_CNN10(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN14':
-            self.predictor = PANNS_CNN14(input_size=self._audio_featurizer.feature_dim,
-                                         num_class=self.configs.dataset_conf.num_class,
-                                         **self.configs.model_conf)
+            self.predictor = PANNS_CNN14(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         elif self.configs.use_model == 'Res2Net':
-            self.predictor = Res2Net(input_size=self._audio_featurizer.feature_dim,
-                                     num_class=self.configs.dataset_conf.num_class,
-                                     **self.configs.model_conf)
+            self.predictor = Res2Net(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         elif self.configs.use_model == 'ResNetSE':
-            self.predictor = ResNetSE(input_size=self._audio_featurizer.feature_dim,
-                                      num_class=self.configs.dataset_conf.num_class,
-                                      **self.configs.model_conf)
+            self.predictor = ResNetSE(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         elif self.configs.use_model == 'TDNN':
-            self.predictor = TDNN(input_size=self._audio_featurizer.feature_dim,
-                                  num_class=self.configs.dataset_conf.num_class,
-                                  **self.configs.model_conf)
+            self.predictor = TDNN(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # 加载模型

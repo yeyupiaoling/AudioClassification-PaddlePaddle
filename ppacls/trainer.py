@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import platform
 import shutil
 import time
 from datetime import timedelta
@@ -8,8 +9,10 @@ from datetime import timedelta
 import paddle
 import yaml
 from paddle.distributed import fleet
+from paddle.fluid.dataloader import DistributedBatchSampler
 from paddle.io import DataLoader
 from paddle.metric import accuracy
+from paddle.optimizer.lr import CosineAnnealingDecay
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from visualdl import LogWriter
@@ -24,7 +27,7 @@ from ppacls.models.res2net import Res2Net
 from ppacls.models.resnet_se import ResNetSE
 from ppacls.models.tdnn import TDNN
 from ppacls.utils.logger import setup_logger
-from ppacls.utils.lr import cosine_decay_with_warmup
+from ppacls.utils.scheduler import cosine_decay_with_warmup
 from ppacls.utils.utils import dict_to_object, plot_confusion_matrix, print_arguments
 
 logger = setup_logger(__name__)
@@ -58,88 +61,83 @@ class PPAClsTrainer(object):
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
         # 获取特征器
-        self.audio_featurizer = AudioFeaturizer(feature_conf=self.configs.feature_conf, **self.configs.preprocess_conf)
+        self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
+                                                method_args=self.configs.preprocess_conf.get('method_args', {}))
+        if platform.system().lower() == 'windows':
+            self.configs.dataset_conf.dataLoader.num_workers = 0
+            logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
 
-    def __setup_dataloader(self, augment_conf_path=None, is_train=False):
-        # 获取训练数据
-        if augment_conf_path is not None and os.path.exists(augment_conf_path) and is_train:
-            augmentation_config = io.open(augment_conf_path, mode='r', encoding='utf8').read()
-        else:
-            if augment_conf_path is not None and not os.path.exists(augment_conf_path):
-                logger.info('数据增强配置文件{}不存在'.format(augment_conf_path))
-            augmentation_config = '{}'
+    def __setup_dataloader(self, is_train=False):
         if is_train:
             self.train_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.train_list,
                                                do_vad=self.configs.dataset_conf.do_vad,
                                                max_duration=self.configs.dataset_conf.max_duration,
                                                min_duration=self.configs.dataset_conf.min_duration,
-                                               augmentation_config=augmentation_config,
+                                               aug_conf=self.configs.dataset_conf.aug_conf,
                                                sample_rate=self.configs.dataset_conf.sample_rate,
                                                use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
                                                target_dB=self.configs.dataset_conf.target_dB,
                                                mode='train')
             # 设置支持多卡训练
-            self.train_batch_sampler = paddle.io.DistributedBatchSampler(dataset=self.train_dataset,
-                                                                         batch_size=self.configs.dataset_conf.batch_size,
-                                                                         shuffle=True)
+            train_sampler = None
+            if paddle.distributed.get_world_size() > 1:
+                # 设置支持多卡训练
+                train_sampler = DistributedBatchSampler(dataset=self.train_dataset,
+                                                        batch_size=self.configs.dataset_conf.dataLoader.batch_size,
+                                                        shuffle=True)
             self.train_loader = DataLoader(dataset=self.train_dataset,
                                            collate_fn=collate_fn,
-                                           batch_sampler=self.train_batch_sampler,
-                                           num_workers=self.configs.dataset_conf.num_workers)
+                                           shuffle=(train_sampler is None),
+                                           batch_sampler=train_sampler,
+                                           **self.configs.dataset_conf.dataLoader)
         # 获取测试数据
         self.test_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.test_list,
                                           do_vad=self.configs.dataset_conf.do_vad,
-                                          max_duration=self.configs.dataset_conf.max_duration,
+                                          max_duration=self.configs.dataset_conf.eval_conf.max_duration,
                                           min_duration=self.configs.dataset_conf.min_duration,
                                           sample_rate=self.configs.dataset_conf.sample_rate,
                                           use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
                                           target_dB=self.configs.dataset_conf.target_dB,
                                           mode='eval')
         self.test_loader = DataLoader(dataset=self.test_dataset,
-                                      batch_size=self.configs.dataset_conf.batch_size,
                                       collate_fn=collate_fn,
-                                      num_workers=self.configs.dataset_conf.num_workers)
+                                      batch_size=self.configs.dataset_conf.eval_conf.batch_size,
+                                      num_workers=self.configs.dataset_conf.dataLoader.num_workers)
 
     def __setup_model(self, input_size, is_train=False):
         # 获取模型
         if self.configs.use_model == 'EcapaTdnn':
-            self.model = EcapaTdnn(input_size=input_size,
-                                   num_class=self.configs.dataset_conf.num_class,
-                                   **self.configs.model_conf)
+            self.model = EcapaTdnn(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN6':
-            self.model = PANNS_CNN6(input_size=input_size,
-                                    num_class=self.configs.dataset_conf.num_class,
-                                    **self.configs.model_conf)
+            self.model = PANNS_CNN6(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN10':
-            self.model = PANNS_CNN10(input_size=input_size,
-                                     num_class=self.configs.dataset_conf.num_class,
-                                     **self.configs.model_conf)
+            self.model = PANNS_CNN10(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'PANNS_CNN14':
-            self.model = PANNS_CNN14(input_size=input_size,
-                                     num_class=self.configs.dataset_conf.num_class,
-                                     **self.configs.model_conf)
+            self.model = PANNS_CNN14(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'Res2Net':
-            self.model = Res2Net(input_size=input_size,
-                                 num_class=self.configs.dataset_conf.num_class,
-                                 **self.configs.model_conf)
+            self.model = Res2Net(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'ResNetSE':
-            self.model = ResNetSE(input_size=input_size,
-                                  num_class=self.configs.dataset_conf.num_class,
-                                  **self.configs.model_conf)
+            self.model = ResNetSE(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'TDNN':
-            self.model = TDNN(input_size=input_size,
-                              num_class=self.configs.dataset_conf.num_class,
-                              **self.configs.model_conf)
+            self.model = TDNN(input_size=input_size, **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         # print(self.model)
         # 获取损失函数
         self.loss = paddle.nn.CrossEntropyLoss()
         if is_train:
-            # 学习率衰减
-            self.scheduler = cosine_decay_with_warmup(learning_rate=float(self.configs.optimizer_conf.learning_rate),
-                                                      max_epochs=int(self.configs.train_conf.max_epoch * 1.2),
-                                                      step_per_epoch=len(self.train_loader))
+            # 学习率衰减函数
+            scheduler_args = self.configs.optimizer_conf.get('scheduler_args', {}) \
+                if self.configs.optimizer_conf.get('scheduler_args', {}) is not None else {}
+            if self.configs.optimizer_conf.scheduler == 'CosineAnnealingLR':
+                max_step = int(self.configs.train_conf.max_epoch * 1.2) * len(self.train_loader)
+                self.scheduler = CosineAnnealingDecay(T_max=max_step,
+                                                      **scheduler_args)
+            elif self.configs.optimizer_conf.scheduler == 'WarmupCosineSchedulerLR':
+                self.scheduler = cosine_decay_with_warmup(step_per_epoch=len(self.train_loader),
+                                                          **scheduler_args)
+            else:
+                raise Exception(f'不支持学习率衰减函数：{self.configs.optimizer_conf.scheduler}')
             # 获取优化方法
             optimizer = self.configs.optimizer_conf.optimizer
             if optimizer == 'Adam':
@@ -157,7 +155,6 @@ class PPAClsTrainer(object):
                                                            weight_decay=float(self.configs.optimizer_conf.weight_decay))
             else:
                 raise Exception(f'不支持优化方法：{optimizer}')
-
 
     def __load_pretrained(self, pretrained_model):
         # 加载预训练模型
@@ -256,7 +253,7 @@ class PPAClsTrainer(object):
             # 多卡训练只使用一个进程打印
             if batch_id % self.configs.train_conf.log_interval == 0 and local_rank == 0:
                 # 计算每秒训练数据量
-                train_speed = self.configs.dataset_conf.batch_size / (sum(train_times) / len(train_times) / 1000)
+                train_speed = self.configs.dataset_conf.dataLoader.batch_size / (sum(train_times) / len(train_times) / 1000)
                 # 计算剩余时间
                 eta_sec = (sum(train_times) / len(train_times)) * (
                         sum_batch - (epoch_id - 1) * len(self.train_loader) - batch_id)
@@ -279,14 +276,12 @@ class PPAClsTrainer(object):
     def train(self,
               save_model_path='models/',
               resume_model=None,
-              pretrained_model=None,
-              augment_conf_path='configs/augmentation.json'):
+              pretrained_model=None):
         """
         训练模型
         :param save_model_path: 模型保存的路径
         :param resume_model: 恢复训练，当为None则不使用预训练模型
         :param pretrained_model: 预训练模型的路径，当为None则不使用预训练模型
-        :param augment_conf_path: 数据增强的配置文件，为json格式
         """
         paddle.seed(1000)
         # 获取有多少张显卡训练
@@ -303,7 +298,7 @@ class PPAClsTrainer(object):
             fleet.init(is_collective=True, strategy=strategy)
 
         # 获取数据
-        self.__setup_dataloader(augment_conf_path=augment_conf_path, is_train=True)
+        self.__setup_dataloader(is_train=True)
         # 获取模型
         self.__setup_model(input_size=self.audio_featurizer.feature_dim, is_train=True)
 
@@ -330,7 +325,7 @@ class PPAClsTrainer(object):
             # 多卡训练只使用一个进程执行评估和保存模型
             if local_rank == 0:
                 logger.info('=' * 70)
-                loss, acc = self.evaluate(resume_model=None)
+                loss, acc = self.evaluate()
                 logger.info('Test epoch: {}, time/epoch: {}, loss: {:.5f}, accuracy: {:.5f}'.format(
                     epoch_id, str(timedelta(seconds=(time.time() - start_epoch))), loss, acc))
                 logger.info('=' * 70)
@@ -346,7 +341,7 @@ class PPAClsTrainer(object):
                 # 保存模型
                 self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=loss)
 
-    def evaluate(self, resume_model='models/EcapaTdnn_MelSpectrogram/best_model/', save_matrix_path=None):
+    def evaluate(self, resume_model=None, save_matrix_path=None):
         """
         评估模型
         :param resume_model: 所使用的模型
@@ -374,7 +369,7 @@ class PPAClsTrainer(object):
         with paddle.no_grad():
             for batch_id, (audio, label, input_lens_ratio) in enumerate(tqdm(self.test_loader())):
                 features, _ = self.audio_featurizer(audio, input_lens_ratio)
-                output = self.model(features, input_lens_ratio)
+                output = eval_model(features, input_lens_ratio)
                 los = self.loss(output, label)
                 # 计算准确率
                 label = paddle.reshape(label, shape=(-1, 1))
