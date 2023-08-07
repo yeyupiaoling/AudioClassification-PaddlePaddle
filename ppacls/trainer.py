@@ -19,6 +19,7 @@ from ppacls import SUPPORT_MODEL, __version__
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
+from ppacls.data_utils.spec_aug import SpecAug
 from ppacls.models.ecapa_tdnn import EcapaTdnn
 from ppacls.models.panns import PANNS_CNN6, PANNS_CNN10, PANNS_CNN14
 from ppacls.models.res2net import Res2Net
@@ -61,6 +62,7 @@ class PPAClsTrainer(object):
         # 获取特征器
         self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
                                                 method_args=self.configs.preprocess_conf.get('method_args', {}))
+        self.spec_aug = SpecAug(**self.configs.dataset_conf.get('spec_aug_args', {}))
         if platform.system().lower() == 'windows':
             self.configs.dataset_conf.dataLoader.num_workers = 0
             logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
@@ -235,6 +237,8 @@ class PPAClsTrainer(object):
         sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
         for batch_id, (audio, label, input_lens_ratio) in enumerate(self.train_loader()):
             features, _ = self.audio_featurizer(audio, input_lens_ratio)
+            if self.configs.dataset_conf.use_spec_aug:
+                features = self.spec_aug(features)
             if self.configs.use_model == 'EcapaTdnn':
                 output = self.model([features, input_lens_ratio])
             else:
