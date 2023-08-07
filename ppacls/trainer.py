@@ -1,4 +1,3 @@
-import io
 import json
 import os
 import platform
@@ -9,8 +8,7 @@ from datetime import timedelta
 import paddle
 import yaml
 from paddle.distributed import fleet
-from paddle.fluid.dataloader import DistributedBatchSampler
-from paddle.io import DataLoader
+from paddle.io import DataLoader, DistributedBatchSampler
 from paddle.metric import accuracy
 from paddle.optimizer.lr import CosineAnnealingDecay
 from sklearn.metrics import confusion_matrix

@@ -53,7 +53,7 @@ class TDNN(nn.Layer):
 
         self.output = nn.Linear(self.emb_size, num_class)
 
-    def forward(self, x, lengths=None):
+    def forward(self, x):
         """
         Compute embeddings.
 

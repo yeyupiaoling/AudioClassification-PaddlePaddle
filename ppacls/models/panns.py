@@ -98,7 +98,7 @@ class PANNS_CNN6(nn.Layer):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(self.emb_size, num_class)
 
-    def forward(self, x, x_len):
+    def forward(self, x):
         x = x.unsqueeze(1)
         x = x.transpose([0, 3, 2, 1])
         x = self.bn0(x)
@@ -160,7 +160,7 @@ class PANNS_CNN10(nn.Layer):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(self.emb_size, num_class)
 
-    def forward(self, x, x_len):
+    def forward(self, x):
         x = x.unsqueeze(1)
         x = x.transpose([0, 3, 2, 1])
         x = self.bn0(x)
@@ -224,7 +224,7 @@ class PANNS_CNN14(nn.Layer):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(self.emb_size, num_class)
 
-    def forward(self, x, x_len):
+    def forward(self, x):
         x = x.unsqueeze(1)
         x = x.transpose([0, 3, 2, 1])
         x = self.bn0(x)

@@ -154,7 +154,7 @@ class Res2Net(nn.Layer):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x, lengths=None):
+    def forward(self, x):
         x = x.transpose([0, 2, 1])
         x = x.unsqueeze(1)
         x = self.conv1(x)
