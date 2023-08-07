@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import paddle
 import yaml
+from paddle import summary
 from paddle.distributed import fleet
 from paddle.io import DataLoader, DistributedBatchSampler
 from paddle.metric import accuracy
@@ -122,10 +123,14 @@ class PPAClsTrainer(object):
             self.model = TDNN(input_size=input_size, **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
+        summary(self.model, (1, 98, self.audio_featurizer.feature_dim))
         # print(self.model)
         # 获取损失函数
         self.loss = paddle.nn.CrossEntropyLoss()
         if is_train:
+            if self.configs.train_conf.enable_amp:
+                # 自动混合精度训练，逻辑2，定义GradScaler
+                self.amp_scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
             # 学习率衰减函数
             scheduler_args = self.configs.optimizer_conf.get('scheduler_args', {}) \
                 if self.configs.optimizer_conf.get('scheduler_args', {}) is not None else {}
@@ -240,14 +245,29 @@ class PPAClsTrainer(object):
             # 特征增强
             if self.configs.dataset_conf.use_spec_aug:
                 features = self.spec_aug(features)
-            if self.configs.use_model == 'EcapaTdnn':
-                output = self.model([features, input_lens_ratio])
-            else:
-                output = self.model(features)
+            # 执行模型计算，是否开启自动混合精度
+            with paddle.amp.auto_cast(enable=self.configs.train_conf.enable_amp, level='O1'):
+                if self.configs.use_model == 'EcapaTdnn':
+                    output = self.model([features, input_lens_ratio])
+                else:
+                    output = self.model(features)
             # 计算损失值
             los = self.loss(output, label)
-            los.backward()
-            self.optimizer.step()
+            # 是否开启自动混合精度
+            if self.configs.train_conf.enable_amp:
+                # loss缩放，乘以系数loss_scaling
+                scaled = self.amp_scaler.scale(los)
+                scaled.backward()
+            else:
+                los.backward()
+            # 是否开启自动混合精度
+            if self.configs.train_conf.enable_amp:
+                # 更新参数（参数梯度先除系数loss_scaling再更新参数）
+                self.amp_scaler.step(self.optimizer)
+                # 基于动态loss_scaling策略更新loss_scaling系数
+                self.amp_scaler.update()
+            else:
+                self.optimizer.step()
             self.optimizer.clear_grad()
             # 计算准确率
             label = paddle.reshape(label, shape=(-1, 1))
