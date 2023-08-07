@@ -237,6 +237,7 @@ class PPAClsTrainer(object):
         sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
         for batch_id, (audio, label, input_lens_ratio) in enumerate(self.train_loader()):
             features, _ = self.audio_featurizer(audio, input_lens_ratio)
+            # 特征增强
             if self.configs.dataset_conf.use_spec_aug:
                 features = self.spec_aug(features)
             if self.configs.use_model == 'EcapaTdnn':
@@ -400,7 +401,7 @@ class PPAClsTrainer(object):
         self.model.train()
         return loss, acc
 
-    def export(self, save_model_path='models/', resume_model='models/EcapaTdnn_MelSpectrogram/best_model/'):
+    def export(self, save_model_path='models/', resume_model='models/EcapaTdnn_Fbank/best_model/'):
         """
         导出预测模型
         :param save_model_path: 模型保存的路径
