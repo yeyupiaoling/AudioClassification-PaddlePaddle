@@ -72,7 +72,7 @@ class AudioFeaturizer(nn.Layer):
         elif self._feature_method == 'MFCC':
             return self._method_args.get('n_mfcc', 40)
         elif self._feature_method == 'Fbank':
-            return self._method_args.get('num_mel_bins', 23)
+            return self._method_args.get('n_mels', 23)
         else:
             raise Exception('没有{}预处理方法'.format(self._feature_method))
 
@@ -92,7 +92,7 @@ class KaldiFbank(nn.Layer):
             if len(waveform.shape) == 1:
                 waveform = waveform.unsqueeze(0)
             log_fbank = Kaldi.fbank(waveform, **self.kwargs)
-            log_fbank = log_fbank.transpose(0, 1)
+            log_fbank = log_fbank.transpose((1, 0))
             log_fbanks.append(log_fbank)
         log_fbank = paddle.stack(log_fbanks)
         return log_fbank

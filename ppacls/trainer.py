@@ -235,7 +235,10 @@ class PPAClsTrainer(object):
         sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
         for batch_id, (audio, label, input_lens_ratio) in enumerate(self.train_loader()):
             features, _ = self.audio_featurizer(audio, input_lens_ratio)
-            output = self.model(features, input_lens_ratio)
+            if self.configs.use_model == 'EcapaTdnn':
+                output = self.model([features, input_lens_ratio])
+            else:
+                output = self.model(features)
             # 计算损失值
             los = self.loss(output, label)
             los.backward()
@@ -367,7 +370,10 @@ class PPAClsTrainer(object):
         with paddle.no_grad():
             for batch_id, (audio, label, input_lens_ratio) in enumerate(tqdm(self.test_loader())):
                 features, _ = self.audio_featurizer(audio, input_lens_ratio)
-                output = eval_model(features, input_lens_ratio)
+                if self.configs.use_model == 'EcapaTdnn':
+                    output = eval_model([features, input_lens_ratio])
+                else:
+                    output = eval_model(features)
                 los = self.loss(output, label)
                 # 计算准确率
                 label = paddle.reshape(label, shape=(-1, 1))

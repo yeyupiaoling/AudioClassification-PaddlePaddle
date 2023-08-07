@@ -120,7 +120,10 @@ class PPAClsPredictor:
         input_len_ratio = paddle.to_tensor([1], dtype=paddle.float32)
         audio_feature, _ = self._audio_featurizer(input_data, input_len_ratio)
         # 执行预测
-        output = self.predictor(audio_feature, input_len_ratio)
+        if self.configs.use_model == 'EcapaTdnn':
+            output = self.predictor([audio_feature, input_len_ratio])
+        else:
+            output = self.predictor(audio_feature)
         result = paddle.nn.functional.softmax(output).numpy()[0]
         # 最大概率的label
         lab = np.argsort(result)[-1]
@@ -158,7 +161,10 @@ class PPAClsPredictor:
         audio_feature = self._audio_featurizer(inputs)
         data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
         # 执行预测
-        output = self.predictor(audio_feature, data_length)
+        if self.configs.use_model == 'EcapaTdnn':
+            output = self.predictor([audio_feature, data_length])
+        else:
+            output = self.predictor(audio_feature)
         results = paddle.nn.functional.softmax(output).numpy()
         labels, scores = [], []
         for result in results:

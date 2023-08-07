@@ -245,7 +245,7 @@ class EcapaTdnn(nn.Layer):
 
         self.output = nn.Linear(self.emb_size, num_class)
 
-    def forward(self, x, lengths=None):
+    def forward(self, x):
         """
         Compute embeddings.
 
@@ -256,6 +256,10 @@ class EcapaTdnn(nn.Layer):
         Returns:
             paddle.Tensor: Output embeddings with shape (N, self.emb_size, 1)
         """
+        if isinstance(x, list):
+            x, lengths = x
+        else:
+            lengths = None
         x = x.transpose([0, 2, 1])
         xl = []
         for layer in self.blocks:
