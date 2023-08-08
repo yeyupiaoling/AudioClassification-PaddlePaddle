@@ -56,6 +56,7 @@ class PPAClsTrainer(object):
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
         self.model = None
         self.test_loader = None
+        self.amp_scaler = None
         # 获取分类标签
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -195,6 +196,9 @@ class PPAClsTrainer(object):
             assert os.path.exists(os.path.join(resume_model, 'optimizer.pdopt')), "优化方法参数文件不存在！"
             self.model.set_state_dict(paddle.load(os.path.join(resume_model, 'model.pdparams')))
             self.optimizer.set_state_dict(paddle.load(os.path.join(resume_model, 'optimizer.pdopt')))
+            # 自动混合精度参数
+            if self.amp_scaler is not None and os.path.exists(os.path.join(resume_model, 'scaler.pdparams')):
+                self.amp_scaler.set_state_dict(paddle.load(os.path.join(resume_model, 'scaler.pdparams')))
             with open(os.path.join(resume_model, 'model.state'), 'r', encoding='utf-8') as f:
                 json_data = json.load(f)
                 last_epoch = json_data['last_epoch'] - 1
@@ -216,6 +220,9 @@ class PPAClsTrainer(object):
         try:
             paddle.save(self.optimizer.state_dict(), os.path.join(model_path, 'optimizer.pdopt'))
             paddle.save(self.model.state_dict(), os.path.join(model_path, 'model.pdparams'))
+            # 自动混合精度参数
+            if self.amp_scaler is not None:
+                paddle.save(self.amp_scaler.state_dict(), os.path.join(model_path, 'scaler.pdparams'))
         except Exception as e:
             logger.error(f'保存模型时出现错误，错误信息：{e}')
             return
