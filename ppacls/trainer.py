@@ -21,7 +21,9 @@ from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import CustomDataset
 from ppacls.data_utils.spec_aug import SpecAug
+from ppacls.models.campplus import CAMPPlus
 from ppacls.models.ecapa_tdnn import EcapaTdnn
+from ppacls.models.eres2net import ERes2Net
 from ppacls.models.panns import PANNS_CNN6, PANNS_CNN10, PANNS_CNN14
 from ppacls.models.res2net import Res2Net
 from ppacls.models.resnet_se import ResNetSE
@@ -122,6 +124,10 @@ class PPAClsTrainer(object):
             self.model = ResNetSE(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'TDNN':
             self.model = TDNN(input_size=input_size, **self.configs.model_conf)
+        elif self.configs.use_model == 'ERes2Net':
+            self.model = ERes2Net(input_size=input_size, **self.configs.model_conf)
+        elif self.configs.use_model == 'CAMPPlus':
+            self.model = CAMPPlus(input_size=input_size, **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
         summary(self.model, (1, 98, self.audio_featurizer.feature_dim))
