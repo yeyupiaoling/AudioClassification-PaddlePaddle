@@ -5,41 +5,8 @@ from ppacls.models.pooling import SelfAttentivePooling, TemporalStatisticsPoolin
 from ppacls.models.utils import Conv1d, BatchNorm1d
 
 
-class SEBasicBlock(nn.Layer):
-    expansion = 1
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None, reduction=8):
-        super(SEBasicBlock, self).__init__()
-        self.conv1 = nn.Conv2D(inplanes, planes, kernel_size=3, stride=stride, padding=1)
-        self.bn1 = nn.BatchNorm2D(planes)
-        self.conv2 = nn.Conv2D(planes, planes, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2D(planes)
-        self.relu = nn.ReLU()
-        self.se = SELayer(planes, reduction)
-        self.downsample = downsample
-        self.stride = stride
-
-    def forward(self, x):
-        residual = x
-
-        out = self.conv1(x)
-        out = self.relu(out)
-        out = self.bn1(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.se(out)
-
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        out = self.relu(out)
-        return out
-
-
 class SEBottleneck(nn.Layer):
-    expansion = 4
+    expansion = 2
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, reduction=8):
         super(SEBottleneck, self).__init__()
@@ -47,10 +14,10 @@ class SEBottleneck(nn.Layer):
         self.bn1 = nn.BatchNorm2D(planes)
         self.conv2 = nn.Conv2D(planes, planes, kernel_size=3, stride=stride, padding=1)
         self.bn2 = nn.BatchNorm2D(planes)
-        self.conv3 = nn.Conv2D(planes, planes * 4, kernel_size=1)
-        self.bn3 = nn.BatchNorm2D(planes * 4)
+        self.conv3 = nn.Conv2D(planes, planes * self.expansion, kernel_size=1)
+        self.bn3 = nn.BatchNorm2D(planes * self.expansion)
         self.relu = nn.ReLU()
-        self.se = SELayer(planes * 4, reduction)
+        self.se = SELayer(planes * self.expansion, reduction)
         self.downsample = downsample
         self.stride = stride
 
@@ -97,11 +64,11 @@ class SELayer(nn.Layer):
 
 
 class ResNetSE(nn.Layer):
-    def __init__(self, num_class, input_size=80, layers=[3, 4, 6, 3], num_filters=[32, 64, 128, 256], embd_dim=192,
+    def __init__(self, num_class, input_size, layers=[3, 4, 6, 3], num_filters=[32, 64, 128, 256], embd_dim=192,
                  pooling_type="ASP"):
         super(ResNetSE, self).__init__()
         self.inplanes = num_filters[0]
-        self.emb_size = embd_dim
+        self.embd_dim = embd_dim
         self.conv1 = nn.Conv2D(1, num_filters[0], kernel_size=3, stride=(1, 1), padding=1)
         self.bn1 = nn.BatchNorm2D(num_filters[0])
         self.relu = nn.ReLU()
@@ -117,33 +84,33 @@ class ResNetSE(nn.Layer):
             self.pooling_bn = BatchNorm1d(input_size=cat_channels * 2)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels * 2,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         elif pooling_type == "SAP":
             self.asp = SelfAttentivePooling(cat_channels, 128)
             self.asp_bn = nn.BatchNorm1D(cat_channels)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         elif pooling_type == "TAP":
             self.asp = TemporalAveragePooling()
             self.asp_bn = nn.BatchNorm1D(cat_channels)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         elif pooling_type == "TSP":
             self.asp = TemporalStatisticsPooling()
             self.asp_bn = nn.BatchNorm1D(cat_channels * 2)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels * 2,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         else:
             raise Exception(f'没有{pooling_type}池化层！')
 
-        self.output = nn.Linear(self.emb_size, num_class)
+        self.output = nn.Linear(self.embd_dim, num_class)
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None

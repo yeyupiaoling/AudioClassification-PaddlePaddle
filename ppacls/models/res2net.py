@@ -89,54 +89,55 @@ class Bottle2neck(nn.Layer):
 
 class Res2Net(nn.Layer):
 
-    def __init__(self, num_class, input_size=80, layers=[3, 4, 6, 3], base_width=26, scale=4, embd_dim=192, pooling_type="ASP"):
-        self.inplanes = 64
+    def __init__(self, num_class, input_size, m_channels=32, layers=[3, 4, 6, 3], base_width=32, scale=2, embd_dim=192,
+                 pooling_type="ASP"):
         super(Res2Net, self).__init__()
+        self.inplanes = m_channels
         self.base_width = base_width
         self.scale = scale
-        self.emb_size = embd_dim
-        self.conv1 = nn.Conv2D(1, 64, kernel_size=7, stride=2, padding=3)
-        self.bn1 = nn.BatchNorm2D(64)
+        self.embd_dim = embd_dim
+        self.conv1 = nn.Conv2D(1, m_channels, kernel_size=7, stride=3, padding=1)
+        self.bn1 = nn.BatchNorm2D(m_channels)
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2D(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(Bottle2neck, 64, layers[0])
-        self.layer2 = self._make_layer(Bottle2neck, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(Bottle2neck, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(Bottle2neck, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(Bottle2neck, m_channels, layers[0])
+        self.layer2 = self._make_layer(Bottle2neck, m_channels * 2, layers[1], stride=2)
+        self.layer3 = self._make_layer(Bottle2neck, m_channels * 4, layers[2], stride=2)
+        self.layer4 = self._make_layer(Bottle2neck, m_channels * 8, layers[3], stride=2)
 
-        cat_channels = 512 * Bottle2neck.expansion * (input_size // 32)
+        cat_channels = m_channels * 8 * Bottle2neck.expansion * (input_size // base_width)
         if pooling_type == "ASP":
             self.pooling = AttentiveStatisticsPooling(cat_channels, 128)
             self.pooling_bn = BatchNorm1d(input_size=cat_channels * 2)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels * 2,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         elif pooling_type == "SAP":
             self.asp = SelfAttentivePooling(cat_channels, 128)
             self.asp_bn = nn.BatchNorm1D(cat_channels)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         elif pooling_type == "TAP":
             self.asp = TemporalAveragePooling()
             self.asp_bn = nn.BatchNorm1D(cat_channels)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         elif pooling_type == "TSP":
             self.asp = TemporalStatisticsPooling()
             self.asp_bn = nn.BatchNorm1D(cat_channels * 2)
             # Final linear transformation
             self.fc = Conv1d(in_channels=cat_channels * 2,
-                             out_channels=self.emb_size,
+                             out_channels=self.embd_dim,
                              kernel_size=1)
         else:
             raise Exception(f'没有{pooling_type}池化层！')
 
-        self.output = nn.Linear(self.emb_size, num_class)
+        self.output = nn.Linear(self.embd_dim, num_class)
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
