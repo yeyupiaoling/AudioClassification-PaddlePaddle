@@ -29,13 +29,13 @@
 
 |      模型      | Params(M) | 预处理方法 |     数据集      | 类别数量 |   准确率   |
 |:------------:|:---------:|:-----:|:------------:|:----:|:-------:|
-|  EcapaTdnn   |    6.2    | Flank | UrbanSound8K |  10  | 0.90503 |
+|   CAMPPlus   |    7.2    | Flank | UrbanSound8K |  10  | 0.96590 |
 | PANNS（CNN10） |    4.9    | Flank | UrbanSound8K |  10  | 0.95454 |
-|     TDNN     |    2.7    | Flank | UrbanSound8K |  10  | 0.92045 |
-|   Res2Net    |    5.6    | Flank | UrbanSound8K |  10  | 0.85812 |
 |   ResNetSE   |    9.1    | Flank | UrbanSound8K |  10  | 0.92219 |
-|   ERes2Net   |    9.1    | Flank | UrbanSound8K |  10  |         |
-|   CAMPPlus   |    9.1    | Flank | UrbanSound8K |  10  | 0.96590 |
+|     TDNN     |    2.7    | Flank | UrbanSound8K |  10  | 0.92045 |
+|   ERes2Net   |    6.6    | Flank | UrbanSound8K |  10  | 0.90909 |
+|  EcapaTdnn   |    6.2    | Flank | UrbanSound8K |  10  | 0.90503 |
+|   Res2Net    |    5.6    | Flank | UrbanSound8K |  10  | 0.85812 |
 
 
 ## 安装环境
