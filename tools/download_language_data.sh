@@ -1,6 +1,6 @@
 #!/bin/bash
 
-download_dir=dataset/language-identification
+download_dir=dataset/language
 
 
 [ ! -d ${download_dir} ] && mkdir -p ${download_dir}
