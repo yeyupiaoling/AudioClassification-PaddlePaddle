@@ -45,11 +45,16 @@ class PPAClsPredictor:
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
+        # 获取特征提取器
         self._audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
                                                 method_args=self.configs.preprocess_conf.get('method_args', {}))
-        # 创建模型
-        if not os.path.exists(model_path):
-            raise Exception("模型文件不存在，请检查{}是否存在！".format(model_path))
+        # 获取分类标签
+        with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        self.class_labels = [l.replace('\n', '') for l in lines]
+        # 自动获取列表数量
+        if self.configs.model_conf.num_class is None:
+            self.configs.model_conf.num_class = len(self.class_labels)
         # 获取模型
         if self.configs.use_model == 'EcapaTdnn':
             self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
@@ -78,10 +83,6 @@ class PPAClsPredictor:
         self.predictor.set_state_dict(paddle.load(model_path))
         print(f"成功加载模型参数：{model_path}")
         self.predictor.eval()
-        # 获取分类标签
-        with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        self.class_labels = [l.replace('\n', '') for l in lines]
 
     def _load_audio(self, audio_data, sample_rate=16000):
         """加载音频

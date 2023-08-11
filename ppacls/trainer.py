@@ -70,6 +70,10 @@ class PPAClsTrainer(object):
         if platform.system().lower() == 'windows':
             self.configs.dataset_conf.dataLoader.num_workers = 0
             logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
+        # 获取分类标签
+        with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        self.class_labels = [l.replace('\n', '') for l in lines]
 
     def __setup_dataloader(self, is_train=False):
         if is_train:
@@ -109,6 +113,9 @@ class PPAClsTrainer(object):
                                       num_workers=self.configs.dataset_conf.dataLoader.num_workers)
 
     def __setup_model(self, input_size, is_train=False):
+        # 自动获取列表数量
+        if self.configs.model_conf.num_class is None:
+            self.configs.model_conf.num_class = len(self.class_labels)
         # 获取模型
         if self.configs.use_model == 'EcapaTdnn':
             self.model = EcapaTdnn(input_size=input_size, **self.configs.model_conf)
