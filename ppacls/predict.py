@@ -107,6 +107,8 @@ class PPAClsPredictor:
         # decibel normalization
         if self.configs.dataset_conf.use_dB_normalization:
             audio_segment.normalize(target_db=self.configs.dataset_conf.target_dB)
+        assert audio_segment.duration >= self.configs.dataset_conf.min_duration, \
+            f'音频太短，最小应该为{self.configs.dataset_conf.min_duration}s，当前音频为{audio_segment.duration}s'
         return audio_segment
 
     # 预测一个音频的特征
@@ -121,8 +123,6 @@ class PPAClsPredictor:
         """
         # 加载音频文件，并进行预处理
         input_data = self._load_audio(audio_data=audio_data, sample_rate=sample_rate)
-        assert input_data.duration >= self.configs.dataset_conf.min_duration, \
-            f'音频太短，最小应该为{self.configs.dataset_conf.min_duration}s，当前音频为{input_data.duration}s'
         input_data = paddle.to_tensor(input_data.samples, dtype=paddle.float32).unsqueeze(0)
         input_len_ratio = paddle.to_tensor([1], dtype=paddle.float32)
         audio_feature, _ = self._audio_featurizer(input_data, input_len_ratio)
