@@ -162,16 +162,16 @@ class PPAClsTrainer(object):
             if optimizer == 'Adam':
                 self.optimizer = paddle.optimizer.Adam(parameters=self.model.parameters(),
                                                        learning_rate=self.scheduler,
-                                                       weight_decay=float(self.configs.optimizer_conf.weight_decay))
+                                                       weight_decay=self.configs.optimizer_conf.weight_decay)
             elif optimizer == 'AdamW':
                 self.optimizer = paddle.optimizer.AdamW(parameters=self.model.parameters(),
                                                         learning_rate=self.scheduler,
-                                                        weight_decay=float(self.configs.optimizer_conf.weight_decay))
+                                                        weight_decay=self.configs.optimizer_conf.weight_decay)
             elif optimizer == 'Momentum':
                 self.optimizer = paddle.optimizer.Momentum(parameters=self.model.parameters(),
-                                                           momentum=self.configs.optimizer_conf.momentum,
+                                                           momentum=self.configs.optimizer_conf.get('momentum', 0.9),
                                                            learning_rate=self.scheduler,
-                                                           weight_decay=float(self.configs.optimizer_conf.weight_decay))
+                                                           weight_decay=self.configs.optimizer_conf.weight_decay)
             else:
                 raise Exception(f'不支持优化方法：{optimizer}')
 
@@ -315,7 +315,7 @@ class PPAClsTrainer(object):
                 # 记录学习率
                 writer.add_scalar('Train/lr', self.scheduler.get_lr(), self.train_step)
                 self.train_step += 1
-                train_times = []
+                train_times, accuracies, loss_sum = [], [], []
             self.scheduler.step()
             start = time.time()
 
