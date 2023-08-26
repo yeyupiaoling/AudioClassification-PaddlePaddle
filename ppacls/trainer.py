@@ -315,7 +315,7 @@ class PPAClsTrainer(object):
                 # 记录学习率
                 writer.add_scalar('Train/lr', self.scheduler.get_lr(), self.train_step)
                 self.train_step += 1
-                train_times = []
+                train_times, accuracies, loss_sum = [], [], []
             self.scheduler.step()
             start = time.time()
 
