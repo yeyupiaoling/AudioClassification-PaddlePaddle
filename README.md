@@ -44,15 +44,15 @@
 
 # 模型测试表
 
-|      模型      | Params(M) | 预处理方法 |     数据集      | 类别数量 |   准确率   |
-|:------------:|:---------:|:-----:|:------------:|:----:|:-------:|
-|   CAMPPlus   |    7.2    | Flank | UrbanSound8K |  10  | 0.96590 |
-| PANNS（CNN10） |    4.9    | Flank | UrbanSound8K |  10  | 0.95454 |
-|   ResNetSE   |    9.1    | Flank | UrbanSound8K |  10  | 0.92219 |
-|     TDNN     |    2.7    | Flank | UrbanSound8K |  10  | 0.92045 |
-|   ERes2Net   |    6.6    | Flank | UrbanSound8K |  10  | 0.90909 |
-|  EcapaTdnn   |    6.2    | Flank | UrbanSound8K |  10  | 0.90503 |
-|   Res2Net    |    5.6    | Flank | UrbanSound8K |  10  | 0.85812 |
+|      模型      | Params(M) | 预处理方法 |     数据集      | 类别数量 |   准确率   |   获取模型   |
+|:------------:|:---------:|:-----:|:------------:|:----:|:-------:|:--------:|
+|   CAMPPlus   |    7.2    | Flank | UrbanSound8K |  10  | 0.96590 | 加入知识星球获取 |
+| PANNS（CNN10） |    4.9    | Flank | UrbanSound8K |  10  | 0.95454 | 加入知识星球获取 |
+|   ResNetSE   |    9.1    | Flank | UrbanSound8K |  10  | 0.92219 | 加入知识星球获取 |
+|     TDNN     |    2.7    | Flank | UrbanSound8K |  10  | 0.92045 | 加入知识星球获取 |
+|   ERes2Net   |    6.6    | Flank | UrbanSound8K |  10  | 0.90909 | 加入知识星球获取 |
+|  EcapaTdnn   |    6.2    | Flank | UrbanSound8K |  10  | 0.90503 | 加入知识星球获取 |
+|   Res2Net    |    5.6    | Flank | UrbanSound8K |  10  | 0.85812 | 加入知识星球获取 |
 
 
 ## 安装环境
