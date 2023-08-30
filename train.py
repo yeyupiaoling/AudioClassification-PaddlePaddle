@@ -6,7 +6,7 @@ from ppacls.utils.utils import add_arguments, print_arguments
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
-add_arg('configs',          str,    'configs/ecapa_tdnn.yml',      '配置文件')
+add_arg('configs',          str,    'configs/cam++.yml',      '配置文件')
 add_arg("use_gpu",          bool,   True,                          '是否使用GPU训练')
 add_arg('save_model_path',  str,    'models/',                  '模型保存的路径')
 add_arg('resume_model',     str,    None,                       '恢复训练，当为None则不使用预训练模型')
