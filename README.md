@@ -53,8 +53,8 @@
 |   ERes2Net   |    6.6    | Flank |   UrbanSound8K    |    10    | 0.90909 | 加入知识星球获取 |
 |  EcapaTdnn   |    6.2    | Flank |   UrbanSound8K    |    10    | 0.90503 | 加入知识星球获取 |
 |   Res2Net    |    5.6    | Flank |   UrbanSound8K    |    10    | 0.85812 | 加入知识星球获取 |
-|   CAMPPlus   |    6.1    | Flank | CN-Celeb和VoxCeleb | 2(中英文语种) |         | 加入知识星球获取 |
-|   ResNetSE   |    9.8    | Flank | CN-Celeb和VoxCeleb | 2(中英文语种) |         | 加入知识星球获取 |
+|   CAMPPlus   |    6.1    | Flank | CN-Celeb和VoxCeleb | 2(中英文语种) | 0.99254 | 加入知识星球获取 |
+|   ResNetSE   |    9.8    | Flank | CN-Celeb和VoxCeleb | 2(中英文语种) | 0.99545 | 加入知识星球获取 |
 
 
 ## 安装环境
