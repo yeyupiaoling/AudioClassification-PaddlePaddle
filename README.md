@@ -75,7 +75,7 @@ python -m pip install ppacls -U -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```shell
 git clone https://github.com/yeyupiaoling/AudioClassification_PaddlePaddle.git
 cd AudioClassification_PaddlePaddle
-python setup.py install
+pip install .
 ```
 
 ## 数据数据
