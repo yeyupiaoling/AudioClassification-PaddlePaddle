@@ -70,10 +70,11 @@ class PPAClsTrainer(object):
         if platform.system().lower() == 'windows':
             self.configs.dataset_conf.dataLoader.num_workers = 0
             logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
-        # 获取分类标签
-        with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        self.class_labels = [l.replace('\n', '') for l in lines]
+        self.max_step, self.train_step = None, None
+        self.train_loss, self.train_acc = None, None
+        self.eval_loss, self.eval_acc = None, None
+        self.test_log_step, self.train_log_step = 0, 0
+        self.stop_train, self.stop_eval = False, False
 
     def __setup_dataloader(self, is_train=False):
         if is_train:
@@ -262,8 +263,8 @@ class PPAClsTrainer(object):
     def __train_epoch(self, epoch_id, local_rank, writer):
         train_times, accuracies, loss_sum = [], [], []
         start = time.time()
-        sum_batch = len(self.train_loader) * self.configs.train_conf.max_epoch
         for batch_id, (audio, label, input_lens_ratio) in enumerate(self.train_loader()):
+            if self.stop_train: break
             features, _ = self.audio_featurizer(audio, input_lens_ratio)
             # 特征增强
             if self.configs.dataset_conf.use_spec_aug:
@@ -298,6 +299,7 @@ class PPAClsTrainer(object):
             accuracies.append(float(acc))
             loss_sum.append(float(los))
             train_times.append((time.time() - start) * 1000)
+            self.train_step += 1
 
             # 多卡训练只使用一个进程打印
             if batch_id % self.configs.train_conf.log_interval == 0 and local_rank == 0:
@@ -305,21 +307,21 @@ class PPAClsTrainer(object):
                 # 计算每秒训练数据量
                 train_speed = self.configs.dataset_conf.dataLoader.batch_size / (sum(train_times) / len(train_times) / 1000)
                 # 计算剩余时间
-                eta_sec = (sum(train_times) / len(train_times)) * (
-                        sum_batch - (epoch_id - 1) * len(self.train_loader) - batch_id)
+                eta_sec = (sum(train_times) / len(train_times)) * (self.max_step - self.train_step)
                 eta_str = str(timedelta(seconds=int(eta_sec / 1000)))
+                self.train_loss = sum(loss_sum) / len(loss_sum)
+                self.train_acc = sum(accuracies) / len(accuracies)
                 logger.info(f'Train epoch: [{epoch_id}/{self.configs.train_conf.max_epoch}], '
                             f'batch: [{batch_id}/{len(self.train_loader)}], '
-                            f'loss: {sum(loss_sum) / len(loss_sum):.5f}, '
-                            f'accuracy: {sum(accuracies) / len(accuracies):.5f}, '
+                            f'loss: {self.train_loss:.5f}, accuracy: {self.train_acc:.5f}, '
                             f'learning rate: {self.scheduler.get_lr():>.8f}, '
                             f'speed: {train_speed:.2f} data/sec, eta: {eta_str}')
-                writer.add_scalar('Train/Loss', sum(loss_sum) / len(loss_sum), self.train_step)
-                writer.add_scalar('Train/Accuracy', (sum(accuracies) / len(accuracies)), self.train_step)
+                writer.add_scalar('Train/Loss', self.train_loss, self.train_log_step)
+                writer.add_scalar('Train/Accuracy', self.train_acc, self.train_log_step)
                 # 记录学习率
-                writer.add_scalar('Train/lr', self.scheduler.get_lr(), self.train_step)
-                self.train_step += 1
+                writer.add_scalar('Train/lr', self.scheduler.get_lr(), self.train_log_step)
                 train_times, accuracies, loss_sum = [], [], []
+                self.train_log_step += 1
             self.scheduler.step()
             start = time.time()
 
@@ -362,12 +364,18 @@ class PPAClsTrainer(object):
         # 加载恢复模型
         last_epoch, best_acc = self.__load_checkpoint(save_model_path=save_model_path, resume_model=resume_model)
 
-        test_step, self.train_step = 0, 0
+        self.train_loss, self.train_acc = None, None
+        self.eval_loss, self.eval_acc = None, None
+        self.test_log_step, self.train_log_step = 0, 0
         last_epoch += 1
         if local_rank == 0:
             writer.add_scalar('Train/lr', self.scheduler.get_lr(), last_epoch)
+        # 最大步数
+        self.max_step = len(self.train_loader) * self.configs.train_conf.max_epoch
+        self.train_step = max(last_epoch, 0) * len(self.train_loader)
         # 开始训练
         for epoch_id in range(last_epoch, self.configs.train_conf.max_epoch):
+            if self.stop_train: break
             epoch_id += 1
             start_epoch = time.time()
             # 训练一个epoch
@@ -375,21 +383,21 @@ class PPAClsTrainer(object):
             # 多卡训练只使用一个进程执行评估和保存模型
             if local_rank == 0:
                 logger.info('=' * 70)
-                loss, acc = self.evaluate()
+                self.eval_loss, self.eval_acc = self.evaluate()
                 logger.info('Test epoch: {}, time/epoch: {}, loss: {:.5f}, accuracy: {:.5f}'.format(
-                    epoch_id, str(timedelta(seconds=(time.time() - start_epoch))), loss, acc))
+                    epoch_id, str(timedelta(seconds=(time.time() - start_epoch))), self.eval_loss, self.eval_acc))
                 logger.info('=' * 70)
-                writer.add_scalar('Test/Accuracy', acc, test_step)
-                writer.add_scalar('Test/Loss', loss, test_step)
-                test_step += 1
+                writer.add_scalar('Test/Accuracy', self.eval_acc, self.test_log_step)
+                writer.add_scalar('Test/Loss', self.eval_loss, self.test_log_step)
+                self.test_log_step += 1
                 self.model.train()
                 # 保存最优模型
-                if acc >= best_acc:
-                    best_acc = acc
-                    self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=acc,
+                if self.eval_acc >= best_acc:
+                    best_acc = self.eval_acc
+                    self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=self.eval_acc,
                                            best_model=True)
                 # 保存模型
-                self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=loss)
+                self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=self.eval_acc)
 
     def evaluate(self, resume_model=None, save_matrix_path=None):
         """
@@ -418,6 +426,7 @@ class PPAClsTrainer(object):
         accuracies, losses, preds, labels = [], [], [], []
         with paddle.no_grad():
             for batch_id, (audio, label, input_lens_ratio) in enumerate(tqdm(self.test_loader())):
+                if self.stop_eval: break
                 features, _ = self.audio_featurizer(audio, input_lens_ratio)
                 if self.configs.use_model == 'EcapaTdnn':
                     output = eval_model([features, input_lens_ratio])
@@ -434,14 +443,16 @@ class PPAClsTrainer(object):
                 preds.extend(pred)
                 # 真实标签
                 labels.extend(label.numpy().tolist())
-        loss = float(sum(losses) / len(losses))
-        acc = float(sum(accuracies) / len(accuracies))
+        loss = float(sum(losses) / len(losses)) if len(losses) > 0 else -1
+        acc = float(sum(accuracies) / len(accuracies)) if len(accuracies) > 0 else -1
         # 保存混合矩阵
         if save_matrix_path is not None:
-            cm = confusion_matrix(labels, preds)
-            plot_confusion_matrix(cm=cm, save_path=os.path.join(save_matrix_path, f'{int(time.time())}.png'),
-                                  class_labels=self.class_labels)
-
+            try:
+                cm = confusion_matrix(labels, preds)
+                plot_confusion_matrix(cm=cm, save_path=os.path.join(save_matrix_path, f'{int(time.time())}.png'),
+                                      class_labels=self.class_labels)
+            except Exception as e:
+                logger.error(f'保存混淆矩阵失败：{e}')
         self.model.train()
         return loss, acc
 
