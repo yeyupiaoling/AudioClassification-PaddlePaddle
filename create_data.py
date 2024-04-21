@@ -5,7 +5,7 @@ import os
 def get_data_list(audio_path, list_path):
     sound_sum = 0
     audios = os.listdir(audio_path)
-
+    os.makedirs(list_path, exist_ok=True)
     f_train = open(os.path.join(list_path, 'train_list.txt'), 'w', encoding='utf-8')
     f_test = open(os.path.join(list_path, 'test_list.txt'), 'w', encoding='utf-8')
     f_label = open(os.path.join(list_path, 'label_list.txt'), 'w', encoding='utf-8')
