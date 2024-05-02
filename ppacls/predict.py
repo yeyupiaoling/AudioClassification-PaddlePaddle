@@ -47,7 +47,7 @@ class PPAClsPredictor:
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
         # 获取特征提取器
         self._audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
-                                                method_args=self.configs.preprocess_conf.get('method_args', {}))
+                                                 method_args=self.configs.preprocess_conf.get('method_args', {}))
         # 获取分类标签
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -124,13 +124,9 @@ class PPAClsPredictor:
         # 加载音频文件，并进行预处理
         input_data = self._load_audio(audio_data=audio_data, sample_rate=sample_rate)
         input_data = paddle.to_tensor(input_data.samples, dtype=paddle.float32).unsqueeze(0)
-        input_len_ratio = paddle.to_tensor([1], dtype=paddle.float32)
-        audio_feature, _ = self._audio_featurizer(input_data, input_len_ratio)
+        audio_feature = self._audio_featurizer(input_data)
         # 执行预测
-        if self.configs.use_model == 'EcapaTdnn':
-            output = self.predictor([audio_feature, input_len_ratio])
-        else:
-            output = self.predictor(audio_feature)
+        output = self.predictor(audio_feature)
         result = paddle.nn.functional.softmax(output).numpy()[0]
         # 最大概率的label
         lab = np.argsort(result)[-1]
@@ -155,7 +151,7 @@ class PPAClsPredictor:
         max_audio_length = batch[0].shape[0]
         batch_size = len(batch)
         # 以最大的长度创建0张量
-        inputs = np.zeros((batch_size, max_audio_length), dtype='float32')
+        inputs = np.zeros((batch_size, max_audio_length), dtype=np.float32)
         input_lens_ratio = []
         for x in range(batch_size):
             tensor = audios_data1[x]
@@ -163,15 +159,11 @@ class PPAClsPredictor:
             # 将数据插入都0张量中，实现了padding
             inputs[x, :seq_length] = tensor[:]
             input_lens_ratio.append(seq_length / max_audio_length)
-        input_lens_ratio = paddle.to_tensor(input_lens_ratio, dtype=paddle.float32)
         inputs = paddle.to_tensor(inputs, dtype=paddle.float32)
-        audio_feature = self._audio_featurizer(inputs)
-        data_length = paddle.to_tensor([audio_feature.shape[1]], dtype=paddle.int64)
+        input_lens_ratio = paddle.to_tensor(input_lens_ratio, dtype=paddle.float32)
+        audio_feature = self._audio_featurizer(inputs, input_lens_ratio)
         # 执行预测
-        if self.configs.use_model == 'EcapaTdnn':
-            output = self.predictor([audio_feature, data_length])
-        else:
-            output = self.predictor(audio_feature)
+        output = self.predictor(audio_feature)
         results = paddle.nn.functional.softmax(output).numpy()
         labels, scores = [], []
         for result in results:

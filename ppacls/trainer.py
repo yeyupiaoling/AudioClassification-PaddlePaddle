@@ -5,6 +5,7 @@ import shutil
 import time
 from datetime import timedelta
 
+import numpy as np
 import paddle
 import yaml
 from paddle import summary
@@ -19,7 +20,7 @@ from visualdl import LogWriter
 from ppacls import SUPPORT_MODEL, __version__
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
-from ppacls.data_utils.reader import CustomDataset
+from ppacls.data_utils.reader import PPAClsDataset
 from ppacls.data_utils.spec_aug import SpecAug
 from ppacls.models.campplus import CAMPPlus
 from ppacls.models.ecapa_tdnn import EcapaTdnn
@@ -57,15 +58,16 @@ class PPAClsTrainer(object):
         self.configs = dict_to_object(configs)
         assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
         self.model = None
+        self.audio_featurizer = None
+        self.train_dataset = None
+        self.train_loader = None
+        self.test_dataset = None
         self.test_loader = None
         self.amp_scaler = None
         # 获取分类标签
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
-        # 获取特征器
-        self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
-                                                method_args=self.configs.preprocess_conf.get('method_args', {}))
         self.spec_aug = SpecAug(**self.configs.dataset_conf.get('spec_aug_args', {}))
         if platform.system().lower() == 'windows':
             self.configs.dataset_conf.dataLoader.num_workers = 0
@@ -78,8 +80,12 @@ class PPAClsTrainer(object):
         self.stop_train, self.stop_eval = False, False
 
     def __setup_dataloader(self, is_train=False):
+        # 获取特征器
+        self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
+                                                method_args=self.configs.preprocess_conf.get('method_args', {}))
         if is_train:
-            self.train_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.train_list,
+            self.train_dataset = PPAClsDataset(data_list_path=self.configs.dataset_conf.train_list,
+                                               audio_featurizer=self.audio_featurizer,
                                                do_vad=self.configs.dataset_conf.do_vad,
                                                max_duration=self.configs.dataset_conf.max_duration,
                                                min_duration=self.configs.dataset_conf.min_duration,
@@ -101,7 +107,8 @@ class PPAClsTrainer(object):
                                            batch_sampler=train_sampler,
                                            **self.configs.dataset_conf.dataLoader)
         # 获取测试数据
-        self.test_dataset = CustomDataset(data_list_path=self.configs.dataset_conf.test_list,
+        self.test_dataset = PPAClsDataset(data_list_path=self.configs.dataset_conf.test_list,
+                                          audio_featurizer=self.audio_featurizer,
                                           do_vad=self.configs.dataset_conf.do_vad,
                                           max_duration=self.configs.dataset_conf.eval_conf.max_duration,
                                           min_duration=self.configs.dataset_conf.min_duration,
@@ -114,6 +121,31 @@ class PPAClsTrainer(object):
                                       shuffle=True,
                                       batch_size=self.configs.dataset_conf.eval_conf.batch_size,
                                       num_workers=self.configs.dataset_conf.dataLoader.num_workers)
+
+    # 提取特征保存文件
+    def extract_features(self, save_dir='dataset/features'):
+        self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
+                                                method_args=self.configs.preprocess_conf.get('method_args', {}))
+        for i, data_list in enumerate([self.configs.dataset_conf.train_list, self.configs.dataset_conf.test_list]):
+            # 获取测试数据
+            test_dataset = PPAClsDataset(data_list_path=data_list,
+                                         audio_featurizer=self.audio_featurizer,
+                                         do_vad=self.configs.dataset_conf.do_vad,
+                                         sample_rate=self.configs.dataset_conf.sample_rate,
+                                         use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
+                                         target_dB=self.configs.dataset_conf.target_dB,
+                                         mode='extract_feature')
+            save_data_list = data_list.replace('.txt', '_features.txt')
+            with open(save_data_list, 'w', encoding='utf-8') as f:
+                for i in tqdm(range(len(test_dataset))):
+                    feature, label = test_dataset[i]
+                    feature = feature.numpy()
+                    label = int(label)
+                    save_path = os.path.join(save_dir, str(label), f'{int(time.time() * 1000)}.npy').replace('\\', '/')
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    np.save(save_path, feature)
+                    f.write(f'{save_path}\t{label}\n')
+            logger.info(f'{data_list}列表中的数据已提取特征完成，新列表为：{save_data_list}')
 
     def __setup_model(self, input_size, is_train=False):
         # 自动获取列表数量
@@ -140,7 +172,7 @@ class PPAClsTrainer(object):
             self.model = CAMPPlus(input_size=input_size, **self.configs.model_conf)
         else:
             raise Exception(f'{self.configs.use_model} 模型不存在！')
-        summary(self.model, (1, 98, self.audio_featurizer.feature_dim))
+        summary(self.model, (1, 98, input_size))
         # print(self.model)
         # 获取损失函数
         weight = paddle.to_tensor(self.configs.train_conf.loss_weight, dtype=paddle.float32) \
@@ -264,18 +296,14 @@ class PPAClsTrainer(object):
     def __train_epoch(self, epoch_id, local_rank, writer):
         train_times, accuracies, loss_sum = [], [], []
         start = time.time()
-        for batch_id, (audio, label, input_lens_ratio) in enumerate(self.train_loader()):
+        for batch_id, (features, label, input_lens) in enumerate(self.train_loader()):
             if self.stop_train: break
-            features, _ = self.audio_featurizer(audio, input_lens_ratio)
             # 特征增强
             if self.configs.dataset_conf.use_spec_aug:
                 features = self.spec_aug(features)
             # 执行模型计算，是否开启自动混合精度
             with paddle.amp.auto_cast(enable=self.configs.train_conf.enable_amp, level='O1'):
-                if self.configs.use_model == 'EcapaTdnn':
-                    output = self.model([features, input_lens_ratio])
-                else:
-                    output = self.model(features)
+                output = self.model(features)
             # 计算损失值
             los = self.loss(output, label)
             # 是否开启自动混合精度
@@ -427,13 +455,9 @@ class PPAClsTrainer(object):
 
         accuracies, losses, preds, labels = [], [], [], []
         with paddle.no_grad():
-            for batch_id, (audio, label, input_lens_ratio) in enumerate(tqdm(self.test_loader())):
+            for batch_id, (features, label, input_lens) in enumerate(tqdm(self.test_loader())):
                 if self.stop_eval: break
-                features, _ = self.audio_featurizer(audio, input_lens_ratio)
-                if self.configs.use_model == 'EcapaTdnn':
-                    output = eval_model([features, input_lens_ratio])
-                else:
-                    output = eval_model(features)
+                output = eval_model(features)
                 los = self.loss(output, label)
                 # 计算准确率
                 label = paddle.reshape(label, shape=(-1, 1))
