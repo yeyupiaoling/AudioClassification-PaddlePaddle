@@ -61,6 +61,7 @@ class PPAClsDataset(Dataset):
     def __getitem__(self, idx):
         # 分割数据文件路径和标签
         data_path, label = self.lines[idx].replace('\n', '').split('\t')
+        label = paddle.to_tensor(int(label), dtype=paddle.int64)
         # 如果后缀名为.npy的文件，那么直接读取
         if data_path.endswith('.npy'):
             feature = np.load(data_path)
@@ -93,7 +94,7 @@ class PPAClsDataset(Dataset):
             samples = paddle.to_tensor(audio_segment.samples, dtype=paddle.float32)
             feature = self.audio_featurizer(samples)
             feature = feature.squeeze(0)
-        return feature, np.array(int(label), dtype=np.int64)
+        return feature, label
 
     def __len__(self):
         return len(self.lines)
