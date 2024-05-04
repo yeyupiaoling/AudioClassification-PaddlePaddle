@@ -24,7 +24,7 @@ from ppacls.data_utils.reader import PPAClsDataset
 from ppacls.data_utils.spec_aug import SpecAug
 from ppacls.models.campplus import CAMPPlus
 from ppacls.models.ecapa_tdnn import EcapaTdnn
-from ppacls.models.eres2net import ERes2Net
+from ppacls.models.eres2net import ERes2Net, ERes2NetV2
 from ppacls.models.panns import PANNS_CNN6, PANNS_CNN10, PANNS_CNN14
 from ppacls.models.res2net import Res2Net
 from ppacls.models.resnet_se import ResNetSE
@@ -168,6 +168,8 @@ class PPAClsTrainer(object):
             self.model = TDNN(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'ERes2Net':
             self.model = ERes2Net(input_size=input_size, **self.configs.model_conf)
+        elif self.configs.use_model == 'ERes2NetV2':
+            self.model = ERes2NetV2(input_size=input_size, **self.configs.model_conf)
         elif self.configs.use_model == 'CAMPPlus':
             self.model = CAMPPlus(input_size=input_size, **self.configs.model_conf)
         else:

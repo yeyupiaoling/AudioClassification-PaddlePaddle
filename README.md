@@ -48,6 +48,7 @@
 |:------------:|:---------:|:-----:|:-----------------:|:--------:|:-------:|:--------:|
 |   CAMPPlus   |    7.2    | Flank |   UrbanSound8K    |    10    | 0.96590 | 加入知识星球获取 |
 | PANNS（CNN10） |    4.9    | Flank |   UrbanSound8K    |    10    | 0.95454 | 加入知识星球获取 |
+|  ERes2NetV2  |    5.4    | Flank |   UrbanSound8K    |    10    | 0.93295 | 加入知识星球获取 |
 |   ResNetSE   |    9.1    | Flank |   UrbanSound8K    |    10    | 0.92219 | 加入知识星球获取 |
 |     TDNN     |    2.7    | Flank |   UrbanSound8K    |    10    | 0.92045 | 加入知识星球获取 |
 |   ERes2Net   |    6.6    | Flank |   UrbanSound8K    |    10    | 0.90909 | 加入知识星球获取 |
