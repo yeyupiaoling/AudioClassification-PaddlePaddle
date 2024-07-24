@@ -70,8 +70,8 @@ model_conf:
   model_args:
     # 分类大小，如果为null，自动通过标签列表获取
     num_class: null
-    pooling_type: "ASP",
-    channels: [512, 512, 512, 512, 1536],
+    pooling_type: "ASP"
+    channels: [512, 512, 512, 512, 1536]
 
 optimizer_conf:
   # 优化方法
