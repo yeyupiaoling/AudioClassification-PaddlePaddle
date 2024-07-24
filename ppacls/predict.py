@@ -8,13 +8,7 @@ import yaml
 from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.audio import AudioSegment
 from ppacls.data_utils.featurizer import AudioFeaturizer
-from ppacls.models.campplus import CAMPPlus
-from ppacls.models.ecapa_tdnn import EcapaTdnn
-from ppacls.models.eres2net import ERes2Net, ERes2NetV2
-from ppacls.models.panns import PANNS_CNN6, PANNS_CNN10, PANNS_CNN14
-from ppacls.models.res2net import Res2Net
-from ppacls.models.resnet_se import ResNetSE
-from ppacls.models.tdnn import TDNN
+from ppacls.models import build_model
 from ppacls.utils.logger import setup_logger
 from ppacls.utils.utils import dict_to_object, print_arguments
 
@@ -44,7 +38,7 @@ class PPAClsPredictor:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
-        assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
+        assert self.configs.model_conf.model in SUPPORT_MODEL, f'没有该模型：{self.configs.model_conf.model}'
         # 获取特征提取器
         self._audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
                                                  method_args=self.configs.preprocess_conf.get('method_args', {}))
@@ -53,31 +47,10 @@ class PPAClsPredictor:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
         # 自动获取列表数量
-        if self.configs.model_conf.num_class is None:
-            self.configs.model_conf.num_class = len(self.class_labels)
+        if self.configs.model_conf.model_args.get('num_class', None) is None:
+            self.configs.model_conf.model_args.num_class = len(self.class_labels)
         # 获取模型
-        if self.configs.use_model == 'EcapaTdnn':
-            self.predictor = EcapaTdnn(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'PANNS_CNN6':
-            self.predictor = PANNS_CNN6(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'PANNS_CNN10':
-            self.predictor = PANNS_CNN10(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'PANNS_CNN14':
-            self.predictor = PANNS_CNN14(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'Res2Net':
-            self.predictor = Res2Net(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'ResNetSE':
-            self.predictor = ResNetSE(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'TDNN':
-            self.predictor = TDNN(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'ERes2Net':
-            self.predictor = ERes2Net(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'ERes2NetV2':
-            self.predictor = ERes2NetV2(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        elif self.configs.use_model == 'CAMPPlus':
-            self.predictor = CAMPPlus(input_size=self._audio_featurizer.feature_dim, **self.configs.model_conf)
-        else:
-            raise Exception(f'{self.configs.use_model} 模型不存在！')
+        self.predictor = build_model(input_size=self._audio_featurizer.feature_dim, configs=self.configs)
         # 加载模型
         if os.path.isdir(model_path):
             model_path = os.path.join(model_path, 'model.pdparams')
@@ -104,13 +77,13 @@ class PPAClsPredictor:
         else:
             raise Exception(f'不支持该数据类型，当前数据类型为：{type(audio_data)}')
         # 重采样
-        if audio_segment.sample_rate != self.configs.dataset_conf.sample_rate:
-            audio_segment.resample(self.configs.dataset_conf.sample_rate)
+        if audio_segment.sample_rate != self.configs.dataset_conf.dataset.sample_rate:
+            audio_segment.resample(self.configs.dataset_conf.dataset.sample_rate)
         # decibel normalization
-        if self.configs.dataset_conf.use_dB_normalization:
-            audio_segment.normalize(target_db=self.configs.dataset_conf.target_dB)
-        assert audio_segment.duration >= self.configs.dataset_conf.min_duration, \
-            f'音频太短，最小应该为{self.configs.dataset_conf.min_duration}s，当前音频为{audio_segment.duration}s'
+        if self.configs.dataset_conf.dataset.use_dB_normalization:
+            audio_segment.normalize(target_db=self.configs.dataset_conf.dataset.target_dB)
+        assert audio_segment.duration >= self.configs.dataset_conf.dataset.min_duration, \
+            f'音频太短，最小应该为{self.configs.dataset_conf.dataset.min_duration}s，当前音频为{audio_segment.duration}s'
         return audio_segment
 
     # 预测一个音频的特征

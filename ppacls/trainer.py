@@ -1,7 +1,5 @@
-import json
 import os
 import platform
-import shutil
 import time
 from datetime import timedelta
 
@@ -10,27 +8,21 @@ import paddle
 import yaml
 from paddle import summary
 from paddle.distributed import fleet
-from paddle.io import DataLoader, DistributedBatchSampler
+from paddle.io import DataLoader, DistributedBatchSampler, BatchSampler
 from paddle.metric import accuracy
-from paddle.optimizer.lr import CosineAnnealingDecay
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from visualdl import LogWriter
 
-from ppacls import SUPPORT_MODEL, __version__
+from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import PPAClsDataset
 from ppacls.data_utils.spec_aug import SpecAug
-from ppacls.models.campplus import CAMPPlus
-from ppacls.models.ecapa_tdnn import EcapaTdnn
-from ppacls.models.eres2net import ERes2Net, ERes2NetV2
-from ppacls.models.panns import PANNS_CNN6, PANNS_CNN10, PANNS_CNN14
-from ppacls.models.res2net import Res2Net
-from ppacls.models.resnet_se import ResNetSE
-from ppacls.models.tdnn import TDNN
+from ppacls.models import build_model
+from ppacls.optimizer import build_lr_scheduler, build_optimizer
+from ppacls.utils.checkpoint import load_pretrained, load_checkpoint, save_checkpoint
 from ppacls.utils.logger import setup_logger
-from ppacls.utils.scheduler import cosine_decay_with_warmup
 from ppacls.utils.utils import dict_to_object, plot_confusion_matrix, print_arguments
 
 logger = setup_logger(__name__)
@@ -56,8 +48,10 @@ class PPAClsTrainer(object):
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
-        assert self.configs.use_model in SUPPORT_MODEL, f'没有该模型：{self.configs.use_model}'
+        assert self.configs.model_conf.model in SUPPORT_MODEL, f'没有该模型：{self.configs.model_conf.model}'
         self.model = None
+        self.optimizer = None
+        self.scheduler = None
         self.audio_featurizer = None
         self.train_dataset = None
         self.train_loader = None
@@ -83,58 +77,47 @@ class PPAClsTrainer(object):
         # 获取特征器
         self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
                                                 method_args=self.configs.preprocess_conf.get('method_args', {}))
+
+        dataset_args = self.configs.dataset_conf.get('dataset', {})
+        sampler_args = self.configs.dataset_conf.get('sampler', {})
+        data_loader_args = self.configs.dataset_conf.get('dataLoader', {})
         if is_train:
             self.train_dataset = PPAClsDataset(data_list_path=self.configs.dataset_conf.train_list,
                                                audio_featurizer=self.audio_featurizer,
-                                               do_vad=self.configs.dataset_conf.do_vad,
-                                               max_duration=self.configs.dataset_conf.max_duration,
-                                               min_duration=self.configs.dataset_conf.min_duration,
                                                aug_conf=self.configs.dataset_conf.aug_conf,
-                                               sample_rate=self.configs.dataset_conf.sample_rate,
-                                               use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
-                                               target_dB=self.configs.dataset_conf.target_dB,
-                                               mode='train')
+                                               mode='train',
+                                               **dataset_args)
             # 设置支持多卡训练
-            train_sampler = None
+            train_sampler = BatchSampler(dataset=self.train_dataset, **sampler_args)
             if paddle.distributed.get_world_size() > 1:
                 # 设置支持多卡训练
-                train_sampler = DistributedBatchSampler(dataset=self.train_dataset,
-                                                        batch_size=self.configs.dataset_conf.dataLoader.batch_size,
-                                                        shuffle=True)
+                train_sampler = DistributedBatchSampler(dataset=self.train_dataset, **sampler_args)
             self.train_loader = DataLoader(dataset=self.train_dataset,
                                            collate_fn=collate_fn,
-                                           shuffle=(train_sampler is None),
                                            batch_sampler=train_sampler,
-                                           **self.configs.dataset_conf.dataLoader)
+                                           **data_loader_args)
         # 获取测试数据
         self.test_dataset = PPAClsDataset(data_list_path=self.configs.dataset_conf.test_list,
                                           audio_featurizer=self.audio_featurizer,
-                                          do_vad=self.configs.dataset_conf.do_vad,
-                                          max_duration=self.configs.dataset_conf.eval_conf.max_duration,
-                                          min_duration=self.configs.dataset_conf.min_duration,
-                                          sample_rate=self.configs.dataset_conf.sample_rate,
-                                          use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
-                                          target_dB=self.configs.dataset_conf.target_dB,
-                                          mode='eval')
+                                          mode='eval',
+                                          **dataset_args)
         self.test_loader = DataLoader(dataset=self.test_dataset,
                                       collate_fn=collate_fn,
                                       shuffle=False,
-                                      batch_size=self.configs.dataset_conf.eval_conf.batch_size,
-                                      num_workers=self.configs.dataset_conf.dataLoader.num_workers)
+                                      **data_loader_args)
 
     # 提取特征保存文件
-    def extract_features(self, save_dir='dataset/features'):
+    def extract_features(self, save_dir='dataset/features', max_duration=100):
         self.audio_featurizer = AudioFeaturizer(feature_method=self.configs.preprocess_conf.feature_method,
                                                 method_args=self.configs.preprocess_conf.get('method_args', {}))
         for i, data_list in enumerate([self.configs.dataset_conf.train_list, self.configs.dataset_conf.test_list]):
             # 获取测试数据
+            dataset_args = self.configs.dataset_conf.get('dataset', {})
+            dataset_args.max_duration = max_duration
             test_dataset = PPAClsDataset(data_list_path=data_list,
                                          audio_featurizer=self.audio_featurizer,
-                                         do_vad=self.configs.dataset_conf.do_vad,
-                                         sample_rate=self.configs.dataset_conf.sample_rate,
-                                         use_dB_normalization=self.configs.dataset_conf.use_dB_normalization,
-                                         target_dB=self.configs.dataset_conf.target_dB,
-                                         mode='extract_feature')
+                                         mode='extract_feature',
+                                         **dataset_args)
             save_data_list = data_list.replace('.txt', '_features.txt')
             with open(save_data_list, 'w', encoding='utf-8') as f:
                 for i in tqdm(range(len(test_dataset))):
@@ -149,151 +132,25 @@ class PPAClsTrainer(object):
 
     def __setup_model(self, input_size, is_train=False):
         # 自动获取列表数量
-        if self.configs.model_conf.num_class is None:
-            self.configs.model_conf.num_class = len(self.class_labels)
+        if self.configs.model_conf.model_args.get('num_class', None) is None:
+            self.configs.model_conf.model_args.num_class = len(self.class_labels)
         # 获取模型
-        if self.configs.use_model == 'EcapaTdnn':
-            self.model = EcapaTdnn(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'PANNS_CNN6':
-            self.model = PANNS_CNN6(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'PANNS_CNN10':
-            self.model = PANNS_CNN10(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'PANNS_CNN14':
-            self.model = PANNS_CNN14(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'Res2Net':
-            self.model = Res2Net(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'ResNetSE':
-            self.model = ResNetSE(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'TDNN':
-            self.model = TDNN(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'ERes2Net':
-            self.model = ERes2Net(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'ERes2NetV2':
-            self.model = ERes2NetV2(input_size=input_size, **self.configs.model_conf)
-        elif self.configs.use_model == 'CAMPPlus':
-            self.model = CAMPPlus(input_size=input_size, **self.configs.model_conf)
-        else:
-            raise Exception(f'{self.configs.use_model} 模型不存在！')
+        self.model = build_model(input_size=input_size, configs=self.configs)
+        # 打印模型信息，98是长度，这个取决于输入的音频长度
         summary(self.model, (1, 98, input_size))
         # print(self.model)
         # 获取损失函数
-        weight = paddle.to_tensor(self.configs.train_conf.loss_weight, dtype=paddle.float32) \
-            if self.configs.train_conf.loss_weight is not None else None
-        self.loss = paddle.nn.CrossEntropyLoss(weight=weight)
+        label_smoothing = self.configs.train_conf.get('label_smoothing', 0.0)
+        self.loss = paddle.nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         if is_train:
             if self.configs.train_conf.enable_amp:
                 # 自动混合精度训练，逻辑2，定义GradScaler
                 self.amp_scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
             # 学习率衰减函数
-            scheduler_args = self.configs.optimizer_conf.get('scheduler_args', {}) \
-                if self.configs.optimizer_conf.get('scheduler_args', {}) is not None else {}
-            if self.configs.optimizer_conf.scheduler == 'CosineAnnealingLR':
-                max_step = int(self.configs.train_conf.max_epoch * 1.2) * len(self.train_loader)
-                self.scheduler = CosineAnnealingDecay(T_max=max_step,
-                                                      **scheduler_args)
-            elif self.configs.optimizer_conf.scheduler == 'WarmupCosineSchedulerLR':
-                self.scheduler = cosine_decay_with_warmup(step_per_epoch=len(self.train_loader),
-                                                          **scheduler_args)
-            else:
-                raise Exception(f'不支持学习率衰减函数：{self.configs.optimizer_conf.scheduler}')
+            self.scheduler = build_lr_scheduler(step_per_epoch=len(self.train_loader), configs=self.configs)
             # 获取优化方法
-            optimizer = self.configs.optimizer_conf.optimizer
-            if optimizer == 'Adam':
-                self.optimizer = paddle.optimizer.Adam(parameters=self.model.parameters(),
-                                                       learning_rate=self.scheduler,
-                                                       weight_decay=self.configs.optimizer_conf.weight_decay)
-            elif optimizer == 'AdamW':
-                self.optimizer = paddle.optimizer.AdamW(parameters=self.model.parameters(),
-                                                        learning_rate=self.scheduler,
-                                                        weight_decay=self.configs.optimizer_conf.weight_decay)
-            elif optimizer == 'Momentum':
-                self.optimizer = paddle.optimizer.Momentum(parameters=self.model.parameters(),
-                                                           momentum=self.configs.optimizer_conf.get('momentum', 0.9),
-                                                           learning_rate=self.scheduler,
-                                                           weight_decay=self.configs.optimizer_conf.weight_decay)
-            else:
-                raise Exception(f'不支持优化方法：{optimizer}')
-
-    def __load_pretrained(self, pretrained_model):
-        # 加载预训练模型
-        if pretrained_model is not None:
-            if os.path.isdir(pretrained_model):
-                pretrained_model = os.path.join(pretrained_model, 'model.pdparams')
-            assert os.path.exists(pretrained_model), f"{pretrained_model} 模型不存在！"
-            model_dict = self.model.state_dict()
-            model_state_dict = paddle.load(pretrained_model)
-            # 过滤不存在的参数
-            for name, weight in model_dict.items():
-                if name in model_state_dict.keys():
-                    if list(weight.shape) != list(model_state_dict[name].shape):
-                        logger.warning('{} not used, shape {} unmatched with {} in model.'.
-                                       format(name, list(model_state_dict[name].shape), list(weight.shape)))
-                        model_state_dict.pop(name, None)
-                else:
-                    logger.warning('Lack weight: {}'.format(name))
-            self.model.set_state_dict(model_state_dict)
-            logger.info('成功加载预训练模型：{}'.format(pretrained_model))
-
-    def __load_checkpoint(self, save_model_path, resume_model):
-        last_epoch = -1
-        best_acc = 0
-        last_model_dir = os.path.join(save_model_path,
-                                      f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
-                                      'last_model')
-        if resume_model is not None or (os.path.exists(os.path.join(last_model_dir, 'model.pdparams'))
-                                        and os.path.exists(os.path.join(last_model_dir, 'optimizer.pdopt'))):
-            # 自动获取最新保存的模型
-            if resume_model is None: resume_model = last_model_dir
-            assert os.path.exists(os.path.join(resume_model, 'model.pdparams')), "模型参数文件不存在！"
-            assert os.path.exists(os.path.join(resume_model, 'optimizer.pdopt')), "优化方法参数文件不存在！"
-            self.model.set_state_dict(paddle.load(os.path.join(resume_model, 'model.pdparams')))
-            self.optimizer.set_state_dict(paddle.load(os.path.join(resume_model, 'optimizer.pdopt')))
-            # 自动混合精度参数
-            if self.amp_scaler is not None and os.path.exists(os.path.join(resume_model, 'scaler.pdparams')):
-                self.amp_scaler.load_state_dict(paddle.load(os.path.join(resume_model, 'scaler.pdparams')))
-            with open(os.path.join(resume_model, 'model.state'), 'r', encoding='utf-8') as f:
-                json_data = json.load(f)
-                last_epoch = json_data['last_epoch'] - 1
-                best_acc = json_data['accuracy']
-            logger.info('成功恢复模型参数和优化方法参数：{}'.format(resume_model))
-        return last_epoch, best_acc
-
-    # 保存模型
-    def __save_checkpoint(self, save_model_path, epoch_id, best_acc=0., best_model=False):
-        if best_model:
-            model_path = os.path.join(save_model_path,
-                                      f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
-                                      'best_model')
-        else:
-            model_path = os.path.join(save_model_path,
-                                      f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
-                                      'epoch_{}'.format(epoch_id))
-        os.makedirs(model_path, exist_ok=True)
-        try:
-            paddle.save(self.optimizer.state_dict(), os.path.join(model_path, 'optimizer.pdopt'))
-            paddle.save(self.model.state_dict(), os.path.join(model_path, 'model.pdparams'))
-            # 自动混合精度参数
-            if self.amp_scaler is not None:
-                paddle.save(self.amp_scaler.state_dict(), os.path.join(model_path, 'scaler.pdparams'))
-        except Exception as e:
-            logger.error(f'保存模型时出现错误，错误信息：{e}')
-            return
-        with open(os.path.join(model_path, 'model.state'), 'w', encoding='utf-8') as f:
-            data = {"last_epoch": epoch_id, "accuracy": best_acc, "version": __version__}
-            f.write(json.dumps(data))
-        if not best_model:
-            last_model_path = os.path.join(save_model_path,
-                                           f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
-                                           'last_model')
-            shutil.rmtree(last_model_path, ignore_errors=True)
-            shutil.copytree(model_path, last_model_path)
-            # 删除旧的模型
-            old_model_path = os.path.join(save_model_path,
-                                          f'{self.configs.use_model}_{self.configs.preprocess_conf.feature_method}',
-                                          'epoch_{}'.format(epoch_id - 3))
-            if os.path.exists(old_model_path):
-                shutil.rmtree(old_model_path)
-        logger.info('已保存模型：{}'.format(model_path))
+            self.optimizer = build_optimizer(parameters=self.model.parameters(), learning_rate=self.scheduler,
+                                             configs=self.configs)
 
     def __train_epoch(self, epoch_id, local_rank, writer):
         train_times, accuracies, loss_sum = [], [], []
@@ -336,7 +193,8 @@ class PPAClsTrainer(object):
             if batch_id % self.configs.train_conf.log_interval == 0 and local_rank == 0:
                 batch_id = batch_id + 1
                 # 计算每秒训练数据量
-                train_speed = self.configs.dataset_conf.dataLoader.batch_size / (sum(train_times) / len(train_times) / 1000)
+                train_speed = self.configs.dataset_conf.sampler.batch_size / (
+                        sum(train_times) / len(train_times) / 1000)
                 # 计算剩余时间
                 self.train_eta_sec = (sum(train_times) / len(train_times)) * (self.max_step - self.train_step) / 1000
                 eta_str = str(timedelta(seconds=int(self.train_eta_sec)))
@@ -358,11 +216,13 @@ class PPAClsTrainer(object):
 
     def train(self,
               save_model_path='models/',
+              log_dir='log/',
               resume_model=None,
               pretrained_model=None):
         """
         训练模型
         :param save_model_path: 模型保存的路径
+        :param log_dir: 保存VisualDL日志文件的路径
         :param resume_model: 恢复训练，当为None则不使用预训练模型
         :param pretrained_model: 预训练模型的路径，当为None则不使用预训练模型
         """
@@ -373,7 +233,7 @@ class PPAClsTrainer(object):
         writer = None
         if local_rank == 0:
             # 日志记录器
-            writer = LogWriter(logdir='log')
+            writer = LogWriter(logdir=log_dir)
 
         if nranks > 1 and self.use_gpu:
             # 初始化Fleet环境
@@ -384,16 +244,19 @@ class PPAClsTrainer(object):
         self.__setup_dataloader(is_train=True)
         # 获取模型
         self.__setup_model(input_size=self.audio_featurizer.feature_dim, is_train=True)
+        # 加载预训练模型
+        self.model = load_pretrained(model=self.model, pretrained_model=pretrained_model)
+        # 加载恢复模型
+        self.model, self.optimizer, self.amp_scaler, self.scheduler, last_epoch, best_acc = \
+            load_checkpoint(configs=self.configs, model=self.model, optimizer=self.optimizer,
+                            amp_scaler=self.amp_scaler, scheduler=self.scheduler, step_epoch=len(self.train_loader),
+                            save_model_path=save_model_path, resume_model=resume_model)
 
         # 支持多卡训练
         if nranks > 1 and self.use_gpu:
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
             self.model = fleet.distributed_model(self.model)
         logger.info('训练数据：{}'.format(len(self.train_dataset)))
-
-        self.__load_pretrained(pretrained_model=pretrained_model)
-        # 加载恢复模型
-        last_epoch, best_acc = self.__load_checkpoint(save_model_path=save_model_path, resume_model=resume_model)
 
         self.train_loss, self.train_acc = None, None
         self.eval_loss, self.eval_acc = None, None
@@ -426,10 +289,13 @@ class PPAClsTrainer(object):
                 # 保存最优模型
                 if self.eval_acc >= best_acc:
                     best_acc = self.eval_acc
-                    self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=self.eval_acc,
-                                           best_model=True)
+                    save_checkpoint(configs=self.configs, model=self.model, optimizer=self.optimizer,
+                                    amp_scaler=self.amp_scaler, save_model_path=save_model_path, epoch_id=epoch_id,
+                                    accuracy=self.eval_acc, best_model=True)
                 # 保存模型
-                self.__save_checkpoint(save_model_path=save_model_path, epoch_id=epoch_id, best_acc=self.eval_acc)
+                save_checkpoint(configs=self.configs, model=self.model, optimizer=self.optimizer,
+                                amp_scaler=self.amp_scaler, save_model_path=save_model_path, epoch_id=epoch_id,
+                                accuracy=self.eval_acc)
 
     def evaluate(self, resume_model=None, save_matrix_path=None):
         """
