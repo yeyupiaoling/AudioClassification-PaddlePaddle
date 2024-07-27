@@ -33,7 +33,7 @@ def load_pretrained(model, pretrained_model):
         else:
             logger.warning('Lack weight: {}'.format(name))
     # 加载权重
-    missing_keys, unexpected_keys = model.set_state_dict(model_state_dict, strict=False)
+    missing_keys, unexpected_keys = model.set_state_dict(model_state_dict)
     if len(unexpected_keys) > 0:
         logger.warning('Unexpected key(s) in state_dict: {}. '
                        .format(', '.join('"{}"'.format(k) for k in unexpected_keys)))
@@ -61,8 +61,8 @@ def load_checkpoint(configs, model, optimizer, amp_scaler, scheduler,
     accuracy1 = 0.
 
     def load_model(model_path):
-        assert os.path.exists(os.path.join(resume_model, 'model.pdparams')), "模型参数文件不存在！"
-        assert os.path.exists(os.path.join(resume_model, 'optimizer.pdopt')), "优化方法参数文件不存在！"
+        assert os.path.exists(os.path.join(model_path, 'model.pdparams')), "模型参数文件不存在！"
+        assert os.path.exists(os.path.join(model_path, 'optimizer.pdopt')), "优化方法参数文件不存在！"
         state_dict = paddle.load(os.path.join(model_path, 'model.pdparams'))
         model.set_state_dict(state_dict)
         optimizer.set_state_dict(paddle.load(os.path.join(model_path, 'optimizer.pdopt')))
