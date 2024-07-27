@@ -16,6 +16,8 @@ dataset_conf:
   sampler:
     # 训练的批量大小
     batch_size: 16
+    # 是否打乱数据
+    shuffle: True
     # 是否丢弃最后一个样本
     drop_last: True
   dataLoader:
