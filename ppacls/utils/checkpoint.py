@@ -110,7 +110,6 @@ def save_checkpoint(configs, model, optimizer, amp_scaler, save_model_path, epoc
     :param accuracy: 当前准确率
     :param best_model: 是否为最佳模型
     """
-    state_dict = model.state_dict()
     # 保存模型的路径
     save_feature_method = configs.preprocess_conf.feature_method
     if best_model:
@@ -119,10 +118,12 @@ def save_checkpoint(configs, model, optimizer, amp_scaler, save_model_path, epoc
     else:
         model_path = os.path.join(save_model_path,
                                   f'{configs.model_conf.model}_{save_feature_method}', 'epoch_{}'.format(epoch_id))
+    if os.path.exists(model_path):
+        shutil.rmtree(model_path)
     os.makedirs(model_path, exist_ok=True)
     # 保存模型参数
     paddle.save(optimizer.state_dict(), os.path.join(model_path, 'optimizer.pdopt'))
-    paddle.save(state_dict, os.path.join(model_path, 'model.pdparams'))
+    paddle.save(model.state_dict(), os.path.join(model_path, 'model.pdparams'))
     # 自动混合精度参数
     if amp_scaler is not None:
         paddle.save(amp_scaler.state_dict(), os.path.join(model_path, 'scaler.pdparams'))
