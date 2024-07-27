@@ -15,24 +15,24 @@ dataset_conf:
     target_dB: -20
   sampler:
     # 训练的批量大小
-    batch_size: 64
+    batch_size: 16
     # 是否丢弃最后一个样本
     drop_last: True
   dataLoader:
     # 读取数据的线程数量
     num_workers: 4
-  # 训练数据的数据列表路径
-  train_list: 'dataset/train_list.txt'
-  # 测试数据的数据列表路径
-  test_list: 'dataset/test_list.txt'
-  # 标签列表
-  label_list_path: 'dataset/label_list.txt'
   # 评估的数据要特殊处理
   eval_conf:
     # 评估的批量大小
     batch_size: 8
     # 最长的音频长度
     max_duration: 20
+  # 训练数据的数据列表路径
+  train_list: 'dataset/train_list.txt'
+  # 测试数据的数据列表路径
+  test_list: 'dataset/test_list.txt'
+  # 标签列表
+  label_list_path: 'dataset/label_list.txt'
   # 数据增强参数
   aug_conf:
     # 是否使用语速扰动增强
@@ -77,7 +77,7 @@ optimizer_conf:
   optimizer: 'Adam'
   # 优化方法参数
   optimizer_args:
-    weight_decay: !!float 1e-5
+    weight_decay: !!float 1e-6
   # 学习率衰减函数，支持PaddlePaddle支持的和项目提供的WarmupCosineSchedulerLR
   scheduler: 'WarmupCosineSchedulerLR'
   # 学习率衰减函数参数
@@ -90,8 +90,6 @@ optimizer_conf:
 train_conf:
   # 是否开启自动混合精度
   enable_amp: False
-  # 是否使用Pytorch2.0的编译器
-  use_compile: False
   # CrossEntropyLoss类的label_smoothing参数
   label_smoothing: 0.0
   # 训练的轮数
