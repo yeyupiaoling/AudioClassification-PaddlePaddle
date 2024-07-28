@@ -14,7 +14,6 @@ from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from visualdl import LogWriter
 
-from ppacls import SUPPORT_MODEL
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import PPAClsDataset
@@ -48,7 +47,6 @@ class PPAClsTrainer(object):
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=configs)
         self.configs = dict_to_object(configs)
-        assert self.configs.model_conf.model in SUPPORT_MODEL, f'没有该模型：{self.configs.model_conf.model}'
         self.model = None
         self.optimizer = None
         self.scheduler = None
@@ -87,7 +85,6 @@ class PPAClsTrainer(object):
                                                aug_conf=self.configs.dataset_conf.aug_conf,
                                                mode='train',
                                                **dataset_args)
-            # 设置支持多卡训练
             train_sampler = BatchSampler(dataset=self.train_dataset, **sampler_args)
             if paddle.distributed.get_world_size() > 1:
                 # 设置支持多卡训练
@@ -316,7 +313,10 @@ class PPAClsTrainer(object):
                 resume_model = os.path.join(resume_model, 'model.pdparams')
             assert os.path.exists(resume_model), f"{resume_model} 模型不存在！"
             model_state_dict = paddle.load(resume_model)
-            self.model.set_state_dict(model_state_dict)
+            missing_keys, unexpected_keys = self.model.set_state_dict(model_state_dict)
+            if len(missing_keys) != 0 or len(unexpected_keys) != 0:
+                logger.warning(f'模型加载部分失败，请检查模型是否匹配\n'
+                               f'missing_keys: {missing_keys}\nunexpected_keys: {unexpected_keys}')
             logger.info(f'成功加载模型：{resume_model}')
         self.model.eval()
         if isinstance(self.model, paddle.DataParallel):
