@@ -22,7 +22,7 @@ dataset_conf:
     drop_last: True
   dataLoader:
     # 读取数据的线程数量
-    num_workers: 4
+    num_workers: 8
   # 评估的数据要特殊处理
   eval_conf:
     # 评估的批量大小
