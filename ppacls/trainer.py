@@ -14,25 +14,25 @@ from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 from visualdl import LogWriter
 
+from loguru import logger
+
+from ppacls.data_utils.augmentation import SpecAugmentor
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import PPAClsDataset
-from ppacls.data_utils.spec_aug import SpecAug
 from ppacls.models import build_model
 from ppacls.optimizer import build_lr_scheduler, build_optimizer
 from ppacls.utils.checkpoint import load_pretrained, load_checkpoint, save_checkpoint
-from ppacls.utils.logger import setup_logger
 from ppacls.utils.utils import dict_to_object, plot_confusion_matrix, print_arguments
-
-logger = setup_logger(__name__)
 
 
 class PPAClsTrainer(object):
-    def __init__(self, configs, use_gpu=True):
+    def __init__(self, configs, use_gpu=True, data_augment_configs=None):
         """ ppacls集成工具类
 
         :param configs: 配置字典
         :param use_gpu: 是否使用GPU训练模型
+        :param data_augment_configs: 数据增强配置字典或者其文件路径
         """
         if use_gpu:
             assert paddle.is_compiled_with_cuda(), 'GPU不可用'
@@ -56,11 +56,18 @@ class PPAClsTrainer(object):
         self.test_dataset = None
         self.test_loader = None
         self.amp_scaler = None
+        # 读取数据增强配置文件
+        if isinstance(data_augment_configs, str):
+            with open(data_augment_configs, 'r', encoding='utf-8') as f:
+                data_augment_configs = yaml.load(f.read(), Loader=yaml.FullLoader)
+            print_arguments(configs=data_augment_configs, title='数据增强配置')
+        self.data_augment_configs = dict_to_object(data_augment_configs)
+        # 特征增强
+        self.spec_aug = SpecAugmentor(**self.data_augment_configs.spec_aug if self.data_augment_configs else {})
         # 获取分类标签
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         self.class_labels = [l.replace('\n', '') for l in lines]
-        self.spec_aug = SpecAug(**self.configs.dataset_conf.get('spec_aug_args', {}))
         if platform.system().lower() == 'windows':
             self.configs.dataset_conf.dataLoader.num_workers = 0
             logger.warning('Windows系统不支持多线程读取数据，已自动关闭！')
@@ -82,7 +89,7 @@ class PPAClsTrainer(object):
         if is_train:
             self.train_dataset = PPAClsDataset(data_list_path=self.configs.dataset_conf.train_list,
                                                audio_featurizer=self.audio_featurizer,
-                                               aug_conf=self.configs.dataset_conf.aug_conf,
+                                               aug_conf=self.data_augment_configs,
                                                mode='train',
                                                **dataset_args)
             train_sampler = BatchSampler(dataset=self.train_dataset, **sampler_args)
@@ -158,8 +165,7 @@ class PPAClsTrainer(object):
         for batch_id, (features, label, input_lens) in enumerate(self.train_loader()):
             if self.stop_train: break
             # 特征增强
-            if self.configs.dataset_conf.use_spec_aug:
-                features = self.spec_aug(features)
+            features = self.spec_aug(features)
             # 执行模型计算，是否开启自动混合精度
             with paddle.amp.auto_cast(enable=self.configs.train_conf.enable_amp, level='O1'):
                 output = self.model(features)

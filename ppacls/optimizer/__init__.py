@@ -1,11 +1,9 @@
 import importlib
 
+from loguru import logger
 from paddle.optimizer import *
 from .scheduler import cosine_decay_with_warmup as WarmupCosineSchedulerLR
 from paddle.optimizer.lr import *
-from ppacls.utils.logger import setup_logger
-
-logger = setup_logger(__name__)
 
 __all__ = ['build_optimizer', 'build_lr_scheduler']
 

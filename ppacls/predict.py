@@ -5,13 +5,11 @@ import numpy as np
 import paddle
 import yaml
 
-from ppacls.data_utils.audio import AudioSegment
+from loguru import logger
+from yeaudio.audio import AudioSegment
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.models import build_model
-from ppacls.utils.logger import setup_logger
 from ppacls.utils.utils import dict_to_object, print_arguments
-
-logger = setup_logger(__name__)
 
 
 class PPAClsPredictor:
@@ -54,7 +52,7 @@ class PPAClsPredictor:
             model_path = os.path.join(model_path, 'model.pdparams')
         assert os.path.exists(model_path), f"{model_path} 模型不存在！"
         self.predictor.set_state_dict(paddle.load(model_path))
-        print(f"成功加载模型参数：{model_path}")
+        logger.info(f"成功加载模型参数：{model_path}")
         self.predictor.eval()
 
     def _load_audio(self, audio_data, sample_rate=16000):
