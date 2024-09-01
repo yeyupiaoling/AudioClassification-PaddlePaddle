@@ -16,7 +16,6 @@ from visualdl import LogWriter
 
 from loguru import logger
 
-from ppacls.data_utils.augmentation import SpecAugmentor
 from ppacls.data_utils.collate_fn import collate_fn
 from ppacls.data_utils.featurizer import AudioFeaturizer
 from ppacls.data_utils.reader import PPAClsDataset
@@ -62,8 +61,6 @@ class PPAClsTrainer(object):
                 data_augment_configs = yaml.load(f.read(), Loader=yaml.FullLoader)
             print_arguments(configs=data_augment_configs, title='数据增强配置')
         self.data_augment_configs = dict_to_object(data_augment_configs)
-        # 特征增强
-        self.spec_aug = SpecAugmentor(**self.data_augment_configs.spec_aug if self.data_augment_configs else {})
         # 获取分类标签
         with open(self.configs.dataset_conf.label_list_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -164,8 +161,6 @@ class PPAClsTrainer(object):
         start = time.time()
         for batch_id, (features, label, input_lens) in enumerate(self.train_loader()):
             if self.stop_train: break
-            # 特征增强
-            features = self.spec_aug(features)
             # 执行模型计算，是否开启自动混合精度
             with paddle.amp.auto_cast(enable=self.configs.train_conf.enable_amp, level='O1'):
                 output = self.model(features)
