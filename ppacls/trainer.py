@@ -262,7 +262,6 @@ class PPAClsTrainer(object):
         self.train_loss, self.train_acc = None, None
         self.eval_loss, self.eval_acc = None, None
         self.test_log_step, self.train_log_step = 0, 0
-        last_epoch += 1
         if local_rank == 0:
             writer.add_scalar('Train/lr', self.scheduler.get_lr(), last_epoch)
         # 最大步数
