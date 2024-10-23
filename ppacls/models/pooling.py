@@ -49,6 +49,7 @@ class TemporalStatisticsPooling(nn.Layer):
 
 class SelfAttentivePooling(nn.Layer):
     """SAP"""
+
     def __init__(self, in_dim, bottleneck_dim=128):
         # Use Conv1d with stride == 1 rather than Linear, then we don't need to transpose inputs.
         # attention dim = 128
@@ -66,7 +67,8 @@ class SelfAttentivePooling(nn.Layer):
 
 
 class AttentiveStatisticsPooling(nn.Layer):
-    """ASP"""
+    """TSP"""
+
     def __init__(self, channels, attention_channels=128, global_context=True):
         super().__init__()
         self.eps = 1e-12
@@ -119,7 +121,6 @@ class AttentiveStatisticsPooling(nn.Layer):
 
         # Append mean and std of the batch
         pooled_stats = paddle.concat((mean, std), axis=1)
-        pooled_stats = pooled_stats.unsqueeze(2)
 
         return pooled_stats
 
