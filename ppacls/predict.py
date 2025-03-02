@@ -1,4 +1,5 @@
 import os
+import sys
 from io import BufferedReader
 
 import numpy as np
@@ -17,13 +18,15 @@ class PPAClsPredictor:
                  configs,
                  model_path='models/EcapaTdnn_Fbank/best_model/',
                  use_gpu=True,
-                 overwrites=None):
-        """
-        声音分类预测工具
-        :param configs: 配置参数
+                 overwrites=None,
+                 log_level="info"):
+        """声音分类预测工具
+
+        :param configs: 配置文件路径，或者模型名称，如果是模型名称则会使用默认的配置文件
         :param model_path: 导出的预测模型文件夹路径
         :param use_gpu: 是否使用GPU预测
         :param overwrites: 覆盖配置文件中的参数，比如"train_conf.max_epoch=100"，多个用逗号隔开
+        :param log_level: 打印的日志等级，可选值有："debug", "info", "warning", "error"
         """
         if use_gpu:
             assert paddle.is_compiled_with_cuda(), 'GPU不可用'
@@ -31,8 +34,16 @@ class PPAClsPredictor:
         else:
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
             paddle.device.set_device("cpu")
+        self.log_level = log_level.upper()
+        logger.remove()
+        logger.add(sink=sys.stdout, level=self.log_level)
         # 读取配置文件
         if isinstance(configs, str):
+            # 获取当前程序绝对路径
+            absolute_path = os.path.dirname(__file__)
+            # 获取默认配置文件路径
+            config_path = os.path.join(absolute_path, f"configs/{configs}.yml")
+            configs = config_path if os.path.exists(config_path) else configs
             with open(configs, 'r', encoding='utf-8') as f:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
         self.configs = dict_to_object(configs)

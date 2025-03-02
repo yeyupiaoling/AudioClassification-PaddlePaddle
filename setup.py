@@ -1,8 +1,14 @@
+import shutil
+
 from setuptools import setup, find_packages
 
 import ppacls
 
 VERSION = ppacls.__version__
+
+# 复制配置文件到项目目录下
+shutil.rmtree('./ppacls/configs/', ignore_errors=True)
+shutil.copytree('./configs/', './ppacls/configs/')
 
 
 def readme():
@@ -21,6 +27,7 @@ if __name__ == "__main__":
     setup(
         name='ppacls',
         packages=find_packages(),
+        package_data={'': ['configs/*']},
         author='yeyupiaoling',
         version=VERSION,
         install_requires=parse_requirements(),
@@ -44,3 +51,4 @@ if __name__ == "__main__":
         ],
         license='Apache License 2.0',
         ext_modules=[])
+    shutil.rmtree('./ppacls/configs/', ignore_errors=True)

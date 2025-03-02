@@ -8,12 +8,12 @@ numba>=0.53.0
 pydub~=0.25.1
 matplotlib>=3.5.2
 typeguard==2.13.3
-pillow>=10.0.1
-tqdm>=4.64.1
-visualdl>=2.2.3
+pillow>=10.3.0
+tqdm>=4.66.3
+visualdl==2.5.3
 pyyaml>=5.4.1
 paddleaudio>=1.0.1
 scikit-learn>=1.0.2
 av>=10.0.0
 loguru>=0.7.2
-yeaudio>=0.0.2
+yeaudio>=0.0.7
